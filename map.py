@@ -8,6 +8,7 @@ import requests
 from shapely.geometry import Point, shape
 
 DATA_DIR = Path("data")
+PREFS_FILE = DATA_DIR / "preferences.json"
 
 BBOX = "174.65,-36.95,174.82,-36.80"  # xmin,ymin,xmax,ymax
 
@@ -30,6 +31,106 @@ FLOOD_LAYERS = {
         "opacity": 0.3,
     },
 }
+
+# Raw JS injected by post-processing (not via folium.Element, to avoid Jinja2 brace conflicts).
+# FMAH_PREFS is embedded separately as a <script>var FMAH_PREFS=...;</script> block.
+# Preferences are POSTed to /api/prefs on each change; server.py writes them to data/preferences.json.
+INTERACTION_JS = """
+<script>
+(function(){
+  var prefs = Object.assign({}, window.FMAH_PREFS || {});
+  var hist = [];
+
+  function persist() {
+    fetch('/api/prefs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(prefs)
+    }).catch(function(){});
+  }
+
+  function applyMark(id, state) {
+    var el = document.getElementById('mk' + id);
+    if (!el) return false;
+    var em = el.querySelector('.mke');
+    var base = el.querySelector('.mkb');
+    if (state === 'interested') {
+      em.textContent = '❤️'; em.style.display = 'block';
+      base.style.display = 'none';
+    } else if (state === 'uninterested') {
+      em.textContent = '✕'; em.style.display = 'block';
+      base.style.display = 'none';
+    } else {
+      em.style.display = 'none';
+      base.style.display = 'block';
+    }
+    return true;
+  }
+
+  window.fmahMark = function(id, state) {
+    var prev = prefs[id] || null, next = prev === state ? null : state;
+    hist.push({id: id, prev: prev});
+    if (next) prefs[id] = next; else delete prefs[id];
+    persist(); applyMark(id, next); refresh();
+  };
+
+  window.fmahUndo = function() {
+    if (!hist.length) return;
+    var last = hist.pop();
+    if (last.prev) prefs[last.id] = last.prev; else delete prefs[last.id];
+    persist(); applyMark(last.id, last.prev || null); refresh();
+  };
+
+  window.fmahClear = function() {
+    if (!confirm('Clear all saved preferences?')) return;
+    prefs = {}; hist = [];
+    persist();
+    document.querySelectorAll('.mke').forEach(function(e) { e.style.display = 'none'; });
+    document.querySelectorAll('.mkb').forEach(function(e) { e.style.display = 'block'; });
+    refresh();
+  };
+
+  function refresh() {
+    var u = document.getElementById('fmah-undo');
+    if (u) u.disabled = !hist.length;
+    var n = Object.keys(prefs).length;
+    var c = document.getElementById('fmah-count');
+    if (c) c.textContent = n ? '(' + n + ' saved)' : '';
+  }
+
+  // Apply preferences embedded at generation time, retrying until Leaflet has rendered all markers.
+  window.addEventListener('load', function() {
+    var ids = Object.keys(prefs), attempts = 0;
+    function applyAll() {
+      var missing = ids.filter(function(id) { return !applyMark(id, prefs[id]); });
+      refresh();
+      if (missing.length && ++attempts < 20) setTimeout(applyAll, 150);
+    }
+    setTimeout(applyAll, 100);
+  });
+})();
+</script>
+"""
+
+CONTROLS_HTML = """
+<div style="
+    position:fixed;bottom:30px;left:10px;z-index:1000;
+    background:white;padding:10px 14px;border-radius:8px;
+    box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:sans-serif;font-size:13px">
+  <div style="font-weight:bold;margin-bottom:8px">
+    Preferences
+    <span id="fmah-count" style="font-weight:normal;color:#888;margin-left:4px"></span>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button id="fmah-undo" onclick="fmahUndo()" disabled style="
+        padding:5px 10px;border:1px solid #ddd;border-radius:4px;
+        background:white;cursor:pointer;font-size:13px">&#8617; Undo</button>
+    <button onclick="fmahClear()" style="
+        padding:5px 10px;border:1px solid #ddd;border-radius:4px;
+        background:white;cursor:pointer;font-size:13px;color:#c62828">Clear all</button>
+  </div>
+</div>
+"""
 
 
 def fetch_school_zone(service_url: str, school_id: int, cache_path: Path) -> dict:
@@ -102,7 +203,7 @@ def format_area(val, unit="m²") -> str:
         return "—"
 
 
-def make_popup(row: pd.Series) -> str:
+def make_popup(row: pd.Series, listing_id: str) -> str:
     title = row.get("LISTING_TITLE", "") or ""
     url = row.get("URL", "") or ""
     address = f"{row.get('STREET_NUMBER', '')} {row.get('STREET', '')}".strip()
@@ -125,6 +226,11 @@ def make_popup(row: pd.Series) -> str:
         f'View listing &rarr;</a>'
     ) if url else ""
 
+    btn_style = (
+        "flex:1;padding:7px 4px;border:1px solid #ddd;border-radius:4px;"
+        "background:#f5f5f5;cursor:pointer;font-size:15px"
+    )
+
     return f"""
     <div style="font-family:sans-serif;font-size:13px;min-width:220px">
       <b>{title}</b>
@@ -139,12 +245,31 @@ def make_popup(row: pd.Series) -> str:
         <tr><td style="color:#888">Land</td><td>{land}</td></tr>
         <tr><td style="color:#888">Floor</td><td>{floor}</td></tr>
       </table>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <button onclick="fmahMark('{listing_id}','interested')" style="{btn_style}" title="Interested">❤️</button>
+        <button onclick="fmahMark('{listing_id}','uninterested')" style="{btn_style}" title="Not interested">✕</button>
+      </div>
       {link_html}
     </div>
     """
 
 
-def main():
+def make_icon(listing_id: str, fill_color: str, stroke_color: str) -> folium.DivIcon:
+    html = (
+        f'<div id="mk{listing_id}" style="position:relative;width:20px;height:20px">'
+        f'<div class="mkb" style="width:20px;height:20px;border-radius:50%;'
+        f'background:{fill_color};border:2px solid {stroke_color};box-sizing:border-box"></div>'
+        f'<span class="mke" style="display:none;position:absolute;inset:0;'
+        f'font-size:16px;line-height:20px;text-align:center;pointer-events:none"></span>'
+        f'</div>'
+    )
+    return folium.DivIcon(html=html, icon_size=(20, 20), icon_anchor=(10, 10))
+
+
+def main(initial_prefs: dict = None):
+    if initial_prefs is None:
+        initial_prefs = json.loads(PREFS_FILE.read_text()) if PREFS_FILE.exists() else {}
+
     # Load housing data
     df = pd.read_csv("data/Housing_2026-06-14-1602.csv")
     df = df.dropna(subset=["LATITUDE", "LONGITUDE"])
@@ -179,13 +304,13 @@ def main():
                 "fillOpacity": l["opacity"],
             },
             tooltip=folium.GeoJsonTooltip(
-                fields=["Hazard"] if key == "flood_plains" else [],
-                aliases=["Type:"] if key == "flood_plains" else [],
+                fields=["Hazard"],
+                aliases=["Type:"],
                 localize=True,
             ) if key == "flood_plains" else None,
         ).add_to(m)
 
-    # MAGS enrolment zone (prominent border, no fill so flood layers show through)
+    # MAGS enrolment zone
     folium.GeoJson(
         mags_zone,
         name="Mt Albert Grammar Zone",
@@ -207,29 +332,25 @@ def main():
         return any(poly.contains(pt) for poly in mags_polygons)
 
     # House markers
-    for _, row in df.iterrows():
+    for i, (_, row) in enumerate(df.iterrows()):
+        listing_id = str(int(row["LISTING_ID"])) if pd.notna(row.get("LISTING_ID")) else str(i)
         price = format_price(row.get("EXPECTED_SALE_PRICE"))
         address = f"{row.get('STREET_NUMBER', '')} {row.get('STREET', '')}".strip()
         suburb_raw = row.get("SUBURB", "") or ""
         suburb = suburb_raw.split(",")[-1].strip() if suburb_raw else ""
 
         inside = in_mags_zone(row["LATITUDE"], row["LONGITUDE"])
-        fill_color = "#3949ab" if inside else "#9E9E9E"
-        stroke_color = "#1a237e" if inside else "#616161"
+        fill_color = "#2ECC71" if inside else "#9E9E9E"
+        stroke_color = "#27AE60" if inside else "#616161"
 
-        folium.CircleMarker(
+        folium.Marker(
             location=[row["LATITUDE"], row["LONGITUDE"]],
-            radius=8,
-            color=stroke_color,
-            fill=True,
-            fill_color=fill_color,
-            fill_opacity=0.9,
-            weight=2,
+            icon=make_icon(listing_id, fill_color, stroke_color),
             tooltip=f"{address}, {suburb} — {price}",
-            popup=folium.Popup(make_popup(row), max_width=280),
+            popup=folium.Popup(make_popup(row, listing_id), max_width=280),
         ).add_to(m)
 
-    # Legend
+    # Legend (via folium.Element — no JS braces, so Jinja2-safe)
     legend_html = """
     <div style="
         position:fixed;bottom:30px;right:10px;z-index:1000;
@@ -237,7 +358,7 @@ def main():
         box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:sans-serif;font-size:13px">
       <b style="display:block;margin-bottom:8px">Legend</b>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="width:14px;height:14px;border-radius:50%;background:#3949ab;display:inline-block"></span>
+        <span style="width:14px;height:14px;border-radius:50%;background:#2ECC71;border:2px solid #27AE60;display:inline-block"></span>
         Listing (in MAGS zone)
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
@@ -264,6 +385,14 @@ def main():
 
     out = Path("map.html")
     m.save(str(out))
+
+    # Post-process: inject controls, prefs init, and interaction JS directly into the HTML
+    # (bypasses Jinja2 so JS object literals don't need escaping)
+    prefs_script = f"<script>var FMAH_PREFS={json.dumps(initial_prefs)};</script>"
+    html = out.read_text()
+    html = html.replace("</body>", prefs_script + CONTROLS_HTML + INTERACTION_JS + "</body>")
+    out.write_text(html)
+
     print(f"\nSaved → {out.resolve()}")
 
 
