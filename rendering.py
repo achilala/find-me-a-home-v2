@@ -162,6 +162,11 @@ def make_popup(row: pd.Series, listing_id: str) -> str:
     sale_type = row.get("SALE_TYPE", "") or ""
     rv = format_price(row.get("RATEABLE_VALUE")) if pd.notna(row.get("RATEABLE_VALUE")) else "—"
 
+    # Fall back to TradeMe URL constructed from LISTING_ID when no agent URL is available
+    listing_id_val = row.get("LISTING_ID")
+    if not url and pd.notna(listing_id_val):
+        url = f"https://www.trademe.co.nz/a/property/residential/sale/listing/{int(listing_id_val)}"
+
     link_html = (
         f'<a href="{url}" target="_blank" style="'
         f'display:block;margin-top:10px;padding:6px 10px;text-align:center;'

@@ -129,8 +129,18 @@ def test_make_popup_has_view_listing_link(sample_row):
     assert "https://example.com/listing/123" in html
 
 
-def test_make_popup_no_link_when_no_url(sample_row):
+def test_make_popup_falls_back_to_trademe_url(sample_row):
     sample_row["URL"] = ""
+    sample_row["LISTING_ID"] = 5920645336
+    html = make_popup(sample_row, "abc123")
+    assert "trademe.co.nz" in html
+    assert "5920645336" in html
+    assert "View listing" in html
+
+
+def test_make_popup_no_link_when_no_url_and_no_listing_id(sample_row):
+    sample_row["URL"] = ""
+    sample_row["LISTING_ID"] = float("nan")
     html = make_popup(sample_row, "abc123")
     assert "View listing" not in html
 
