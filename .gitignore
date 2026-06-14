@@ -4,3 +4,4 @@ __pycache__/
 map.html
 data/flood_plains.geojson
 data/flood_prone.geojson
+data/preferences.json
