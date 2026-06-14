@@ -349,7 +349,7 @@ def build_map(
                 f'<div style="font-size:20px;line-height:1;'
                 f'filter:drop-shadow(0 0 4px {hl_info["marker_bg"]})">📚</div>'
             )
-            icon = folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12), class_name="fmah-school")
+            icon = folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12), class_name="fmah-school-highlight")
         else:
             icon_html = (
                 f'<div style="font-size:14px;line-height:1;'
