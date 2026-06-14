@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
+.coverage
 map.html
 data/flood_plains.geojson
 data/flood_prone.geojson

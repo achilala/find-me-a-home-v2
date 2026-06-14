@@ -5,34 +5,56 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-uv run map.py        # generate map.html (the output)
-uv add <package>     # add a dependency
+uv run server.py              # generate map and start server at localhost:5000
+uv run pytest                 # run full test suite with coverage
+uv run pytest tests/test_X.py # run a single test file
+uv run pytest -k test_name    # run a single test by name
+uv add <package>              # add a runtime dependency
+uv add --dev <package>        # add a dev dependency
 ```
 
-`map.html` is gitignored (generated output). Re-run `map.py` to rebuild it.
+`map.html` is gitignored (generated output). `data/preferences.json` is gitignored (personal).
 
 ## Architecture
 
-Single-script project. `map.py` is the entire application:
+The project is split into four source modules:
 
-1. **Flood zone data** — fetched from Auckland Council's ArcGIS FeatureServer, spatially filtered to the bounding box of the listings, and cached to `data/flood_plains.geojson` and `data/flood_prone.geojson`. Delete these files to force a re-fetch.
-
-2. **School zone data** — fetched by `School_ID` from the Ministry of Education's NZ School Zone Boundaries FeatureServer, cached to `data/mags_zone.geojson`.
-
-3. **Housing data** — read from `data/Housing_2026-06-14-1602.csv` (static input, committed to the repo). Key columns: `LATITUDE`, `LONGITUDE`, `URL`, `EXPECTED_SALE_PRICE`, `RATEABLE_VALUE`, `BEDROOM_COUNT`, `BATHROOM_COUNT`, `GARAGE_PARKING_COUNT`, `LAND_AREA_IN_M2`, `FLOOR_AREA`, `SALE_TYPE`.
-
-4. **Map rendering** — Folium (Leaflet.js wrapper). Layer order matters: flood zones are added before markers so they sit beneath. `shapely` is used for point-in-polygon to decide marker colour (blue = inside MAGS zone, grey = outside).
-
-## Key constants
-
-| Constant | Purpose |
+| Module | Responsibility |
 |---|---|
-| `BBOX` | Spatial filter for flood zone queries (xmin,ymin,xmax,ymax in WGS84) |
-| `MAGS_SCHOOL_ID` | Ministry of Education school ID for Mt Albert Grammar (69) |
-| `FLOOD_LAYERS` | Dict of flood layer configs — URL, display name, colours, opacity |
+| `config.py` | Single source of truth — `AppConfig` dataclass with all constants (colours, URLs, school IDs, bbox, port). Change a value here and it propagates everywhere. |
+| `fetchers.py` | All ArcGIS data fetching. `cached_fetch()` is the single DRY cache-check-or-call pattern used by all three fetch functions. |
+| `rendering.py` | Map assembly — `build_map()`, `post_process_html()`, `make_popup()`, `make_icon()`, `format_price()`, `format_area()`. Also holds `INTERACTION_JS` and `CONTROLS_HTML` string templates. |
+| `map.py` | Thin ~35-line orchestrator: loads config → reads CSV → calls fetchers → calls `build_map()`. |
+| `server.py` | Flask app. Serves `map.html`, handles `GET/POST /api/prefs` to persist preferences to `data/preferences.json`. |
+
+## Key config values (all in `config.py`)
+
+| Field | Purpose |
+|---|---|
+| `AppConfig.bbox` | Spatial filter for ArcGIS queries (xmin,ymin,xmax,ymax WGS84) |
+| `AppConfig.highlight_schools` | Dict of `school_id → {name, short, zone_fill, zone_stroke, marker_bg}` |
+| `AppConfig.listing_colors` | `in_zone` and `out_zone` fill/stroke colours for listing markers |
+| `AppConfig.flood_layers` | Dict of flood layer configs — URL, name, colours, opacity |
+| `AppConfig.port` | Flask server port (default 5000) |
+
+## Test structure
+
+```
+tests/
+  conftest.py        — shared fixtures (sample_config, sample_df, sample_geojson, etc.)
+  test_config.py     — AppConfig defaults and derived properties
+  test_fetchers.py   — cached_fetch, fetch_school_zone, fetch_schools_in_area, fetch_flood_features
+  test_rendering.py  — format helpers, make_popup, make_icon, build_map, post_process_html
+  test_map.py        — _norm_suburb, main() orchestration
+  test_server.py     — Flask endpoints via test client
+```
+
+HTTP calls in tests are mocked with `unittest.mock.patch`. No real ArcGIS requests are made during testing.
 
 ## Data sources
 
-- **Flood Plains / Flood Prone Areas**: `https://services1.arcgis.com/n4yPwebTjJCmXB6W/arcgis/rest/services/`
-- **School zones**: `https://services.arcgis.com/XTtANUDT8Va4DLwI/arcgis/rest/services/NZ_School_Zone_boundaries/FeatureServer/0`
-- Both are public Auckland Council / MOE ArcGIS services; no API key required.
+- **Flood Plains / Flood Prone Areas**: Auckland Council ArcGIS (`services1.arcgis.com/n4yPwebTjJCmXB6W`)
+- **School zones**: MOE NZ School Zone Boundaries (`services.arcgis.com/XTtANUDT8Va4DLwI`)
+- **Schools directory**: MOE Schools Directory (`services.arcgis.com/XTtANUDT8Va4DLwI`)
+
+All fetched data is cached in `data/` and re-used on subsequent runs.
