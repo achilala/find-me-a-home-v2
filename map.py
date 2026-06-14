@@ -35,7 +35,7 @@ HIGHLIGHT_SCHOOLS = {
 
 LISTING_COLORS = {
     "in_zone":  {"fill": "#2ECC71", "stroke": "#27AE60"},
-    "out_zone": {"fill": "#FFAB76", "stroke": "#FB8C00"},
+    "out_zone": {"fill": "#EF9A9A", "stroke": "#E53935"},
 }
 
 FLOOD_LAYERS = {
