@@ -57,6 +57,10 @@ class AppConfig:
         },
     })
 
+    # Geometry simplification tolerance (degrees). 0 = no simplification.
+    # Use ~0.0001 for Vercel/static builds to keep HTML under 10 MB.
+    simplify_tolerance: float = 0.0
+
     @property
     def prefs_file(self) -> Path:
         return self.data_dir / "preferences.json"

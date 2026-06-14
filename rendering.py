@@ -5,7 +5,22 @@ import folium
 import pandas as pd
 from shapely.geometry import Point, shape
 
+from shapely.geometry import mapping
+from shapely.geometry import shape as _shape
+
 from config import AppConfig
+
+
+def _simplify_geojson(geojson: dict, tolerance: float) -> dict:
+    """Return a copy of a GeoJSON FeatureCollection with simplified geometries."""
+    features = []
+    for f in geojson.get("features", []):
+        try:
+            geom = _shape(f["geometry"]).simplify(tolerance, preserve_topology=True)
+            features.append({**f, "geometry": mapping(geom)})
+        except Exception:
+            features.append(f)
+    return {**geojson, "features": features}
 
 # ---------------------------------------------------------------------------
 # Client-side JS and controls — injected via HTML post-processing to avoid
@@ -298,6 +313,9 @@ def build_map(
     def in_zone(lat: float, lng: float) -> bool:
         pt = Point(lng, lat)
         return any(poly.contains(pt) for poly in mags_polygons)
+
+    if config.simplify_tolerance > 0:
+        flood_data = {k: _simplify_geojson(v, config.simplify_tolerance) for k, v in flood_data.items()}
 
     center = [df["LATITUDE"].mean(), df["LONGITUDE"].mean()]
     m = folium.Map(location=center, zoom_start=13, tiles="CartoDB positron")

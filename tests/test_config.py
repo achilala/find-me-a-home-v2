@@ -77,3 +77,11 @@ def test_school_zones_url_not_empty():
 
 def test_schools_dir_url_not_empty():
     assert AppConfig().schools_dir_url.startswith("https://")
+
+
+def test_simplify_tolerance_default_zero():
+    assert AppConfig().simplify_tolerance == 0.0
+
+
+def test_simplify_tolerance_custom():
+    assert AppConfig(simplify_tolerance=0.0001).simplify_tolerance == 0.0001
