@@ -23,6 +23,11 @@ def index():
     return send_file(Path("map.html").resolve())
 
 
+@app.route("/api/prefs", methods=["GET"])
+def get_prefs():
+    return jsonify(load_prefs())
+
+
 @app.route("/api/prefs", methods=["POST"])
 def save_prefs():
     prefs = request.get_json()

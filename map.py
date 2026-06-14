@@ -98,15 +98,22 @@ INTERACTION_JS = """
     if (c) c.textContent = n ? '(' + n + ' saved)' : '';
   }
 
-  // Apply preferences embedded at generation time, retrying until Leaflet has rendered all markers.
+  // Fetch current preferences from server on every load so they're always fresh.
+  // Falls back to the embedded FMAH_PREFS constant if the server isn't available.
   window.addEventListener('load', function() {
-    var ids = Object.keys(prefs), attempts = 0;
     function applyAll() {
-      var missing = ids.filter(function(id) { return !applyMark(id, prefs[id]); });
-      refresh();
-      if (missing.length && ++attempts < 20) setTimeout(applyAll, 150);
+      var ids = Object.keys(prefs), attempts = 0;
+      function tryApply() {
+        var missing = ids.filter(function(id) { return !applyMark(id, prefs[id]); });
+        refresh();
+        if (missing.length && ++attempts < 20) setTimeout(tryApply, 150);
+      }
+      setTimeout(tryApply, 100);
     }
-    setTimeout(applyAll, 100);
+    fetch('/api/prefs')
+      .then(function(r) { return r.json(); })
+      .then(function(saved) { prefs = saved; applyAll(); })
+      .catch(function() { applyAll(); });
   });
 })();
 </script>
