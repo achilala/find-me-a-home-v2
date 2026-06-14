@@ -318,7 +318,8 @@ def main(initial_prefs: dict = None):
         initial_prefs = json.loads(PREFS_FILE.read_text()) if PREFS_FILE.exists() else {}
 
     # Load housing data
-    df = pd.read_csv("data/Housing_2026-06-14-1602.csv")
+    csv_files = sorted(DATA_DIR.glob("Housing_*.csv"))
+    df = pd.read_csv(csv_files[-1])
     df = df.dropna(subset=["LATITUDE", "LONGITUDE"])
     print(f"Loaded {len(df)} houses")
 
