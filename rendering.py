@@ -148,7 +148,8 @@ def format_area(val, unit="m²") -> str:
 
 def make_popup(row: pd.Series, listing_id: str) -> str:
     title = row.get("LISTING_TITLE", "") or ""
-    url = row.get("URL", "") or ""
+    url_raw = row.get("URL")
+    url = "" if (url_raw is None or pd.isna(url_raw)) else str(url_raw).strip()
     address = f"{row.get('STREET_NUMBER', '')} {row.get('STREET', '')}".strip()
     suburb_raw = row.get("SUBURB", "") or ""
     suburb = suburb_raw.split(",")[-1].strip() if suburb_raw else ""
