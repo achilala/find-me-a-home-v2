@@ -182,7 +182,7 @@ def fetch_schools_in_area(bbox: str, cache_path: Path) -> list[dict]:
         "inSR": "4326",
         "spatialRel": "esriSpatialRelIntersects",
         "where": "Status='Open'",
-        "outFields": "School_Id,Org_Name,Org_Type,Definition,Decile,Total,Latitude,Longitude",
+        "outFields": "School_Id,Org_Name,Org_Type,Definition,Decile,Total,Latitude,Longitude,Add1_Suburb",
         "outSR": "4326",
         "f": "json",
     }
@@ -333,10 +333,24 @@ def main(initial_prefs: dict = None):
         school_zones[school_id] = zone
         print(f"  Total: {len(zone['features'])} features")
 
-    # Fetch schools in area
+    # Fetch schools in area, filtered to suburbs present in the listings
     print("Fetching schools in area...")
-    schools = fetch_schools_in_area(BBOX, DATA_DIR / "schools.json")
-    print(f"  Total: {len(schools)} schools")
+    schools_all = fetch_schools_in_area(BBOX, DATA_DIR / "schools.json")
+
+    def norm(s: str) -> str:
+        return s.lower().replace("mount ", "mt ").strip()
+
+    listing_suburbs = {
+        norm(row["SUBURB"].split(",")[-1].strip())
+        for _, row in df.iterrows()
+        if row.get("SUBURB")
+    }
+    schools = [
+        s for s in schools_all
+        if norm(s.get("Add1_Suburb") or "") in listing_suburbs
+        or s.get("School_Id") in HIGHLIGHT_SCHOOLS
+    ]
+    print(f"  Showing {len(schools)} of {len(schools_all)} schools (in listing suburbs)")
 
     # Keep mags_zone reference for point-in-polygon check (backwards compat)
     mags_zone = school_zones[69]
@@ -395,21 +409,20 @@ def main(initial_prefs: dict = None):
             continue
         info = highlight_ids.get(name)
         if info:
-            # Highlighted school: coloured badge with short name
+            # Highlighted school: larger 📚 with coloured glow
             icon_html = (
-                f'<div style="background:{info["marker_bg"]};color:white;'
-                f'padding:3px 7px;border-radius:10px;font-size:11px;'
-                f'font-family:sans-serif;font-weight:bold;white-space:nowrap;'
-                f'box-shadow:0 1px 4px rgba(0,0,0,.3)">{info["short"]}</div>'
+                f'<div style="font-size:20px;line-height:1;'
+                f'filter:drop-shadow(0 0 4px {info["marker_bg"]})">'
+                f'📚</div>'
             )
-            icon = folium.DivIcon(html=icon_html, icon_anchor=(0, 10))
+            icon = folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12))
         else:
             # Regular school: small 🏫 emoji
             school_type = s.get("Definition") or s.get("Org_Type", "")
             icon_html = (
                 f'<div style="font-size:14px;line-height:1;'
                 f'filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))" '
-                f'title="{name}">🏫</div>'
+                f'title="{name}">📚</div>'
             )
             icon = folium.DivIcon(html=icon_html, icon_size=(20, 20), icon_anchor=(10, 10))
 
@@ -483,7 +496,7 @@ def main(initial_prefs: dict = None):
         Gladstone Zone
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:13px">🏫</span>
+        <span style="font-size:13px">📚</span>
         School
       </div>
     </div>
