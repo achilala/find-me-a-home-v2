@@ -5,6 +5,7 @@ from pathlib import Path
 import folium
 import pandas as pd
 import requests
+from shapely.geometry import Point, shape
 
 DATA_DIR = Path("data")
 
@@ -117,11 +118,16 @@ def make_popup(row: pd.Series) -> str:
     sale_type = row.get("SALE_TYPE", "") or ""
     rv = format_price(row.get("RATEABLE_VALUE")) if pd.notna(row.get("RATEABLE_VALUE")) else "—"
 
-    title_html = f'<a href="{url}" target="_blank"><b>{title}</b></a>' if url else f"<b>{title}</b>"
+    link_html = (
+        f'<a href="{url}" target="_blank" style="'
+        f'display:block;margin-top:10px;padding:6px 10px;text-align:center;'
+        f'background:#3949ab;color:white;border-radius:4px;text-decoration:none;font-weight:bold">'
+        f'View listing &rarr;</a>'
+    ) if url else ""
 
     return f"""
     <div style="font-family:sans-serif;font-size:13px;min-width:220px">
-      {title_html}
+      <b>{title}</b>
       <div style="color:#555;margin:4px 0">{address}, {suburb}</div>
       <hr style="margin:6px 0;border-color:#eee">
       <table style="width:100%;border-collapse:collapse">
@@ -133,6 +139,7 @@ def make_popup(row: pd.Series) -> str:
         <tr><td style="color:#888">Land</td><td>{land}</td></tr>
         <tr><td style="color:#888">Floor</td><td>{floor}</td></tr>
       </table>
+      {link_html}
     </div>
     """
 
@@ -192,6 +199,13 @@ def main():
         tooltip="Mt Albert Grammar School Enrolment Zone",
     ).add_to(m)
 
+    # Build MAGS zone polygon for point-in-polygon checks
+    mags_polygons = [shape(f["geometry"]) for f in mags_zone["features"] if f.get("geometry")]
+
+    def in_mags_zone(lat, lng) -> bool:
+        pt = Point(lng, lat)
+        return any(poly.contains(pt) for poly in mags_polygons)
+
     # House markers
     for _, row in df.iterrows():
         price = format_price(row.get("EXPECTED_SALE_PRICE"))
@@ -199,12 +213,16 @@ def main():
         suburb_raw = row.get("SUBURB", "") or ""
         suburb = suburb_raw.split(",")[-1].strip() if suburb_raw else ""
 
+        inside = in_mags_zone(row["LATITUDE"], row["LONGITUDE"])
+        fill_color = "#3949ab" if inside else "#9E9E9E"
+        stroke_color = "#1a237e" if inside else "#616161"
+
         folium.CircleMarker(
             location=[row["LATITUDE"], row["LONGITUDE"]],
             radius=8,
-            color="#1a237e",
+            color=stroke_color,
             fill=True,
-            fill_color="#3949ab",
+            fill_color=fill_color,
             fill_opacity=0.9,
             weight=2,
             tooltip=f"{address}, {suburb} — {price}",
@@ -220,7 +238,11 @@ def main():
       <b style="display:block;margin-bottom:8px">Legend</b>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
         <span style="width:14px;height:14px;border-radius:50%;background:#3949ab;display:inline-block"></span>
-        Listing
+        Listing (in MAGS zone)
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="width:14px;height:14px;border-radius:50%;background:#9E9E9E;display:inline-block"></span>
+        Listing (outside zone)
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
         <span style="width:14px;height:14px;background:#90CAF9;display:inline-block;border:1px solid #64B5F6"></span>
