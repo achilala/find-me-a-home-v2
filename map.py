@@ -12,8 +12,26 @@ PREFS_FILE = DATA_DIR / "preferences.json"
 
 BBOX = "174.65,-36.95,174.82,-36.80"  # xmin,ymin,xmax,ymax
 
-MAGS_ZONE_URL = "https://services.arcgis.com/XTtANUDT8Va4DLwI/arcgis/rest/services/NZ_School_Zone_boundaries/FeatureServer/0"
-MAGS_SCHOOL_ID = 69
+SCHOOL_ZONES_URL = "https://services.arcgis.com/XTtANUDT8Va4DLwI/arcgis/rest/services/NZ_School_Zone_boundaries/FeatureServer/0"
+SCHOOLS_DIR_URL = "https://services.arcgis.com/XTtANUDT8Va4DLwI/arcgis/rest/services/Schools_Directory_New_Zealand/FeatureServer/0"
+
+# Schools with highlighted zones and markers
+HIGHLIGHT_SCHOOLS = {
+    69: {
+        "name": "Mt Albert Grammar School",
+        "short": "MAGS",
+        "zone_fill": "#A5D6A7",
+        "zone_stroke": "#66BB6A",
+        "marker_bg": "#43A047",
+    },
+    1282: {
+        "name": "Gladstone School (Auckland)",
+        "short": "Gladstone",
+        "zone_fill": "#CE93D8",
+        "zone_stroke": "#AB47BC",
+        "marker_bg": "#8E24AA",
+    },
+}
 
 FLOOD_LAYERS = {
     "flood_plains": {
@@ -140,22 +158,39 @@ CONTROLS_HTML = """
 """
 
 
-def fetch_school_zone(service_url: str, school_id: int, cache_path: Path) -> dict:
+def fetch_school_zone(school_id: int, cache_path: Path) -> dict:
+    if cache_path.exists():
+        print(f"  Using cached {cache_path.name}")
+        return json.loads(cache_path.read_text())
+
+    params = {"where": f"School_ID = {school_id}", "outFields": "School_name,School_ID", "outSR": "4326", "f": "geojson"}
+    resp = requests.get(f"{SCHOOL_ZONES_URL}/query", params=params, timeout=30)
+    resp.raise_for_status()
+    geojson = resp.json()
+    cache_path.write_text(json.dumps(geojson))
+    return geojson
+
+
+def fetch_schools_in_area(bbox: str, cache_path: Path) -> list[dict]:
     if cache_path.exists():
         print(f"  Using cached {cache_path.name}")
         return json.loads(cache_path.read_text())
 
     params = {
-        "where": f"School_ID = {school_id}",
-        "outFields": "School_name,School_ID",
+        "geometry": bbox,
+        "geometryType": "esriGeometryEnvelope",
+        "inSR": "4326",
+        "spatialRel": "esriSpatialRelIntersects",
+        "where": "Status='Open'",
+        "outFields": "School_Id,Org_Name,Org_Type,Definition,Decile,Total,Latitude,Longitude",
         "outSR": "4326",
-        "f": "geojson",
+        "f": "json",
     }
-    resp = requests.get(f"{service_url}/query", params=params, timeout=30)
+    resp = requests.get(f"{SCHOOLS_DIR_URL}/query", params=params, timeout=30)
     resp.raise_for_status()
-    geojson = resp.json()
-    cache_path.write_text(json.dumps(geojson))
-    return geojson
+    schools = [f["attributes"] for f in resp.json().get("features", []) if f["attributes"].get("Latitude")]
+    cache_path.write_text(json.dumps(schools))
+    return schools
 
 
 def fetch_features(service_url: str, bbox: str, cache_path: Path) -> dict:
@@ -290,10 +325,21 @@ def main(initial_prefs: dict = None):
         flood_data[key] = geojson
         print(f"  Total: {len(geojson['features'])} features")
 
-    # Fetch MAGS enrolment zone
-    print("Fetching Mt Albert Grammar School zone...")
-    mags_zone = fetch_school_zone(MAGS_ZONE_URL, MAGS_SCHOOL_ID, DATA_DIR / "mags_zone.geojson")
-    print(f"  Total: {len(mags_zone['features'])} features")
+    # Fetch highlighted school zones
+    school_zones = {}
+    for school_id, info in HIGHLIGHT_SCHOOLS.items():
+        print(f"Fetching {info['short']} zone...")
+        zone = fetch_school_zone(school_id, DATA_DIR / f"zone_{school_id}.geojson")
+        school_zones[school_id] = zone
+        print(f"  Total: {len(zone['features'])} features")
+
+    # Fetch schools in area
+    print("Fetching schools in area...")
+    schools = fetch_schools_in_area(BBOX, DATA_DIR / "schools.json")
+    print(f"  Total: {len(schools)} schools")
+
+    # Keep mags_zone reference for point-in-polygon check (backwards compat)
+    mags_zone = school_zones[69]
 
     # Build map
     center = [df["LATITUDE"].mean(), df["LONGITUDE"].mean()]
@@ -317,19 +363,20 @@ def main(initial_prefs: dict = None):
             ) if key == "flood_plains" else None,
         ).add_to(m)
 
-    # MAGS enrolment zone
-    folium.GeoJson(
-        mags_zone,
-        name="Mt Albert Grammar Zone",
-        style_function=lambda _: {
-            "fillColor": "#A5D6A7",
-            "color": "#81C784",
-            "weight": 2,
-            "fillOpacity": 0.12,
-            "dashArray": "6 4",
-        },
-        tooltip="Mt Albert Grammar School Enrolment Zone",
-    ).add_to(m)
+    # Highlighted school zones
+    for school_id, info in HIGHLIGHT_SCHOOLS.items():
+        folium.GeoJson(
+            school_zones[school_id],
+            name=f"{info['short']} Enrolment Zone",
+            style_function=lambda _, i=info: {
+                "fillColor": i["zone_fill"],
+                "color": i["zone_stroke"],
+                "weight": 2,
+                "fillOpacity": 0.12,
+                "dashArray": "6 4",
+            },
+            tooltip=f"{info['name']} Enrolment Zone",
+        ).add_to(m)
 
     # Build MAGS zone polygon for point-in-polygon checks
     mags_polygons = [shape(f["geometry"]) for f in mags_zone["features"] if f.get("geometry")]
@@ -337,6 +384,53 @@ def main(initial_prefs: dict = None):
     def in_mags_zone(lat, lng) -> bool:
         pt = Point(lng, lat)
         return any(poly.contains(pt) for poly in mags_polygons)
+
+    # School markers
+    highlight_ids = {info["name"]: info for info in HIGHLIGHT_SCHOOLS.values()}
+    schools_group = folium.FeatureGroup(name="Schools", show=True)
+    for s in schools:
+        name = s.get("Org_Name", "")
+        lat, lng = s.get("Latitude"), s.get("Longitude")
+        if not lat or not lng:
+            continue
+        info = highlight_ids.get(name)
+        if info:
+            # Highlighted school: coloured badge with short name
+            icon_html = (
+                f'<div style="background:{info["marker_bg"]};color:white;'
+                f'padding:3px 7px;border-radius:10px;font-size:11px;'
+                f'font-family:sans-serif;font-weight:bold;white-space:nowrap;'
+                f'box-shadow:0 1px 4px rgba(0,0,0,.3)">{info["short"]}</div>'
+            )
+            icon = folium.DivIcon(html=icon_html, icon_anchor=(0, 10))
+        else:
+            # Regular school: small 🏫 emoji
+            school_type = s.get("Definition") or s.get("Org_Type", "")
+            icon_html = (
+                f'<div style="font-size:14px;line-height:1;'
+                f'filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))" '
+                f'title="{name}">🏫</div>'
+            )
+            icon = folium.DivIcon(html=icon_html, icon_size=(20, 20), icon_anchor=(10, 10))
+
+        decile = s.get("Decile") or "—"
+        roll = s.get("Total") or "—"
+        tooltip_text = f"{name} · {s.get('Definition') or s.get('Org_Type', '')} · Decile {decile}"
+
+        folium.Marker(
+            location=[lat, lng],
+            icon=icon,
+            tooltip=tooltip_text,
+            popup=folium.Popup(
+                f'<div style="font-family:sans-serif;font-size:13px">'
+                f'<b>{name}</b><br>'
+                f'<span style="color:#888">{s.get("Definition") or s.get("Org_Type", "")}</span><br>'
+                f'Decile {decile} &nbsp;·&nbsp; Roll {roll}'
+                f'</div>',
+                max_width=220,
+            ),
+        ).add_to(schools_group)
+    schools_group.add_to(m)
 
     # House markers
     for i, (_, row) in enumerate(df.iterrows()):
@@ -380,9 +474,17 @@ def main(initial_prefs: dict = None):
         <span style="width:14px;height:14px;background:#FFCC80;display:inline-block;border:1px solid #FFA726"></span>
         Flood Prone Area
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="width:14px;height:3px;display:inline-block;border-top:2px dashed #66BB6A"></span>
+        MAGS Zone
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="width:14px;height:3px;display:inline-block;border-top:2px dashed #AB47BC"></span>
+        Gladstone Zone
+      </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <span style="width:14px;height:3px;background:#81C784;display:inline-block;border-top:2px dashed #81C784"></span>
-        MAGS Enrolment Zone
+        <span style="font-size:13px">🏫</span>
+        School
       </div>
     </div>
     """
