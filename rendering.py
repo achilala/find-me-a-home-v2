@@ -59,10 +59,8 @@ INTERACTION_JS = """
   };
 
   window.fmahToggleOutZone = function(hide) {
-    ['.fmah-out-zone', '.fmah-school'].forEach(function(sel) {
-      document.querySelectorAll(sel).forEach(function(el) {
-        el.style.display = hide ? 'none' : '';
-      });
+    document.querySelectorAll('.fmah-out-zone').forEach(function(el) {
+      el.style.display = hide ? 'none' : '';
     });
   };
 
@@ -122,7 +120,7 @@ CONTROLS_HTML = """
   <div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee">
     <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
       <input type="checkbox" id="fmah-hide-out-zone" onchange="fmahToggleOutZone(this.checked)">
-      Hide out-of-zone listings and schools
+      Hide out-of-zone listings
     </label>
   </div>
 </div>
@@ -349,13 +347,13 @@ def build_map(
                 f'<div style="font-size:20px;line-height:1;'
                 f'filter:drop-shadow(0 0 4px {hl_info["marker_bg"]})">📚</div>'
             )
-            icon = folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12), class_name="fmah-school-highlight")
+            icon = folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12))
         else:
             icon_html = (
                 f'<div style="font-size:14px;line-height:1;'
                 f'filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))" title="{name}">📚</div>'
             )
-            icon = folium.DivIcon(html=icon_html, icon_size=(20, 20), icon_anchor=(10, 10), class_name="fmah-school")
+            icon = folium.DivIcon(html=icon_html, icon_size=(20, 20), icon_anchor=(10, 10))
 
         decile = s.get("Decile") or "—"
         roll = s.get("Total") or "—"
