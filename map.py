@@ -33,6 +33,11 @@ HIGHLIGHT_SCHOOLS = {
     },
 }
 
+LISTING_COLORS = {
+    "in_zone":  {"fill": "#2ECC71", "stroke": "#27AE60"},
+    "out_zone": {"fill": "#FFAB76", "stroke": "#FB8C00"},
+}
+
 FLOOD_LAYERS = {
     "flood_plains": {
         "url": "https://services1.arcgis.com/n4yPwebTjJCmXB6W/arcgis/rest/services/Flood_Plains/FeatureServer/0",
@@ -454,8 +459,8 @@ def main(initial_prefs: dict = None):
         suburb = suburb_raw.split(",")[-1].strip() if suburb_raw else ""
 
         inside = in_mags_zone(row["LATITUDE"], row["LONGITUDE"])
-        fill_color = "#2ECC71" if inside else "#9E9E9E"
-        stroke_color = "#27AE60" if inside else "#616161"
+        colors = LISTING_COLORS["in_zone"] if inside else LISTING_COLORS["out_zone"]
+        fill_color, stroke_color = colors["fill"], colors["stroke"]
 
         folium.Marker(
             location=[row["LATITUDE"], row["LONGITUDE"]],
@@ -464,37 +469,38 @@ def main(initial_prefs: dict = None):
             popup=folium.Popup(make_popup(row, listing_id), max_width=280),
         ).add_to(m)
 
-    # Legend (via folium.Element — no JS braces, so Jinja2-safe)
-    legend_html = """
+    # Legend — colours pulled from constants so they stay in sync automatically
+    iz, oz = LISTING_COLORS["in_zone"], LISTING_COLORS["out_zone"]
+    fp, fpr = FLOOD_LAYERS["flood_plains"], FLOOD_LAYERS["flood_prone"]
+    school_zone_rows = "".join(
+        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+        f'<span style="width:14px;height:3px;display:inline-block;border-top:2px dashed {info["zone_stroke"]}"></span>'
+        f'{info["short"]} Zone</div>'
+        for info in HIGHLIGHT_SCHOOLS.values()
+    )
+    legend_html = f"""
     <div style="
         position:fixed;bottom:30px;right:10px;z-index:1000;
         background:white;padding:12px 16px;border-radius:8px;
         box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:sans-serif;font-size:13px">
       <b style="display:block;margin-bottom:8px">Legend</b>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="width:14px;height:14px;border-radius:50%;background:#2ECC71;border:2px solid #27AE60;display:inline-block"></span>
+        <span style="width:14px;height:14px;border-radius:50%;background:{iz['fill']};border:2px solid {iz['stroke']};display:inline-block"></span>
         Listing (in MAGS zone)
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="width:14px;height:14px;border-radius:50%;background:#9E9E9E;display:inline-block"></span>
+        <span style="width:14px;height:14px;border-radius:50%;background:{oz['fill']};border:2px solid {oz['stroke']};display:inline-block"></span>
         Listing (outside zone)
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="width:14px;height:14px;background:#90CAF9;display:inline-block;border:1px solid #64B5F6"></span>
+        <span style="width:14px;height:14px;background:{fp['fill']};display:inline-block;border:1px solid {fp['stroke']}"></span>
         Flood Plain (1-in-100yr)
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="width:14px;height:14px;background:#FFCC80;display:inline-block;border:1px solid #FFA726"></span>
+        <span style="width:14px;height:14px;background:{fpr['fill']};display:inline-block;border:1px solid {fpr['stroke']}"></span>
         Flood Prone Area
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="width:14px;height:3px;display:inline-block;border-top:2px dashed #66BB6A"></span>
-        MAGS Zone
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="width:14px;height:3px;display:inline-block;border-top:2px dashed #AB47BC"></span>
-        Gladstone Zone
-      </div>
+      {school_zone_rows}
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:13px">📚</span>
         School
