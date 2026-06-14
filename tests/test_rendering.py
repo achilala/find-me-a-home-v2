@@ -190,6 +190,16 @@ def test_make_icon_has_mke_span():
     assert 'class="mke"' in icon.options["html"]
 
 
+def test_make_icon_default_class_name():
+    icon = make_icon("12345", "#2ECC71", "#27AE60")
+    assert icon.options["class_name"] == "fmah-marker"
+
+
+def test_make_icon_out_zone_class_name():
+    icon = make_icon("12345", "#EF9A9A", "#E53935", class_name="fmah-marker fmah-out-zone")
+    assert "fmah-out-zone" in icon.options["class_name"]
+
+
 # ---------------------------------------------------------------------------
 # build_map
 # ---------------------------------------------------------------------------

@@ -58,6 +58,12 @@ INTERACTION_JS = """
     persist(); applyMark(last.id, last.prev || null); refresh();
   };
 
+  window.fmahToggleOutZone = function(hide) {
+    document.querySelectorAll('.fmah-out-zone').forEach(function(el) {
+      el.style.display = hide ? 'none' : '';
+    });
+  };
+
   window.fmahClear = function() {
     if (!confirm('Clear all saved preferences?')) return;
     prefs = {}; hist = [];
@@ -110,6 +116,12 @@ CONTROLS_HTML = """
     <button onclick="fmahClear()" style="
         padding:5px 10px;border:1px solid #ddd;border-radius:4px;
         background:white;cursor:pointer;font-size:13px;color:#c62828">Clear all</button>
+  </div>
+  <div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="checkbox" id="fmah-hide-out-zone" onchange="fmahToggleOutZone(this.checked)">
+      Hide out-of-zone listings
+    </label>
   </div>
 </div>
 """
@@ -203,7 +215,7 @@ def make_popup(row: pd.Series, listing_id: str) -> str:
     """
 
 
-def make_icon(listing_id: str, fill_color: str, stroke_color: str) -> folium.DivIcon:
+def make_icon(listing_id: str, fill_color: str, stroke_color: str, class_name: str = "fmah-marker") -> folium.DivIcon:
     html = (
         f'<div id="mk{listing_id}" style="position:relative;width:20px;height:20px">'
         f'<div class="mkb" style="width:20px;height:20px;border-radius:50%;'
@@ -212,7 +224,7 @@ def make_icon(listing_id: str, fill_color: str, stroke_color: str) -> folium.Div
         f'font-size:16px;line-height:20px;text-align:center;pointer-events:none"></span>'
         f'</div>'
     )
-    return folium.DivIcon(html=html, icon_size=(20, 20), icon_anchor=(10, 10))
+    return folium.DivIcon(html=html, icon_size=(20, 20), icon_anchor=(10, 10), class_name=class_name)
 
 
 # ---------------------------------------------------------------------------
@@ -368,10 +380,12 @@ def build_map(
         suburb_raw = row.get("SUBURB", "") or ""
         suburb = suburb_raw.split(",")[-1].strip() if suburb_raw else ""
 
-        colors = config.listing_colors["in_zone"] if in_zone(row["LATITUDE"], row["LONGITUDE"]) else config.listing_colors["out_zone"]
+        inside = in_zone(row["LATITUDE"], row["LONGITUDE"])
+        colors = config.listing_colors["in_zone"] if inside else config.listing_colors["out_zone"]
+        marker_class = "fmah-marker" if inside else "fmah-marker fmah-out-zone"
         folium.Marker(
             location=[row["LATITUDE"], row["LONGITUDE"]],
-            icon=make_icon(listing_id, colors["fill"], colors["stroke"]),
+            icon=make_icon(listing_id, colors["fill"], colors["stroke"], class_name=marker_class),
             tooltip=f"{address}, {suburb} — {price}",
             popup=folium.Popup(make_popup(row, listing_id), max_width=280),
         ).add_to(m)
