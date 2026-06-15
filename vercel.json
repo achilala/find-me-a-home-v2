@@ -1,4 +1,5 @@
 {
+  "buildCommand": "echo 'serving pre-built map'",
   "outputDirectory": "public",
   "framework": null
 }
