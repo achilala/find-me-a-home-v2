@@ -111,6 +111,7 @@ INTERACTION_JS = """
         var missing = ids.filter(function(id) { return !applyMark(id, prefs[id]); });
         refresh();
         if (missing.length && ++attempts < 20) setTimeout(tryApply, 150);
+      else fmahToggleOutZone(true);  // apply default hidden state after marks are applied
       }
       setTimeout(tryApply, 100);
     }
@@ -149,7 +150,7 @@ CONTROLS_HTML = """
   </div>
   <div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee">
     <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-      <input type="checkbox" id="fmah-hide-out-zone" onchange="fmahToggleOutZone(this.checked)">
+      <input type="checkbox" id="fmah-hide-out-zone" checked onchange="fmahToggleOutZone(this.checked)">
       Hide out-of-zone listings
     </label>
   </div>
@@ -383,10 +384,10 @@ def build_map(
         hl_info = highlight_by_name.get(name)
         if hl_info:
             icon_html = (
-                f'<div style="font-size:20px;line-height:1;'
-                f'filter:drop-shadow(0 0 4px {hl_info["marker_bg"]})">📚</div>'
+                f'<div style="font-size:32px;line-height:1;'
+                f'filter:drop-shadow(0 0 6px {hl_info["marker_bg"]})">📚</div>'
             )
-            icon = folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12))
+            icon = folium.DivIcon(html=icon_html, icon_size=(36, 36), icon_anchor=(18, 18))
         else:
             icon_html = (
                 f'<div style="font-size:14px;line-height:1;'

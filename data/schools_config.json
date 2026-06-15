@@ -12,5 +12,12 @@
     "zone_fill": "#CE93D8",
     "zone_stroke": "#AB47BC",
     "marker_bg": "#8E24AA"
+  },
+  "48": {
+    "name": "Western Springs College-Ng\u0101 Puna o Wai\u014drea",
+    "short": "WSC",
+    "zone_fill": "#90CAF9",
+    "zone_stroke": "#64B5F6",
+    "marker_bg": "#1565C0"
   }
 }
