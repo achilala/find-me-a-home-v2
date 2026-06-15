@@ -1,8 +1,11 @@
+import html
 import json
+import re
 import time
 from pathlib import Path
 from typing import Callable, TypeVar
 
+import pandas as pd
 import requests
 
 from config import AppConfig
@@ -89,3 +92,49 @@ def fetch_flood_features(service_url: str, bbox: str, cache_path: Path) -> dict:
         return {"type": "FeatureCollection", "features": all_features}
 
     return cached_fetch(cache_path, _fetch)
+
+
+_OG_IMAGE_RE = re.compile(
+    r'property="og:image"\s+content="([^"]+)"|content="([^"]+)"\s+property="og:image"',
+    re.IGNORECASE,
+)
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; find-me-a-home-bot/1.0)"}
+
+
+def _extract_og_image(page_html: str) -> str:
+    m = _OG_IMAGE_RE.search(page_html)
+    if m:
+        return html.unescape(m.group(1) or m.group(2))
+    return ""
+
+
+def fetch_listing_thumbnails(df: pd.DataFrame, config: AppConfig) -> dict[str, str]:
+    """Return {listing_id: thumbnail_url} for all listings, fetching missing ones."""
+    cache_path = config.data_dir / "thumbnails.json"
+    cache: dict[str, str] = json.loads(cache_path.read_text()) if cache_path.exists() else {}
+
+    updated = False
+    for _, row in df.iterrows():
+        listing_id = str(int(row["LISTING_ID"])) if pd.notna(row.get("LISTING_ID")) else None
+        if not listing_id or listing_id in cache:
+            continue
+
+        url_raw = row.get("URL")
+        url = "" if (not url_raw or pd.isna(url_raw)) else str(url_raw).strip()
+        if not url:
+            url = f"https://www.trademe.co.nz/a/property/residential/sale/listing/{listing_id}"
+
+        try:
+            resp = requests.get(url, timeout=8, headers=_HEADERS, allow_redirects=True)
+            cache[listing_id] = _extract_og_image(resp.text)
+        except Exception:
+            cache[listing_id] = ""
+
+        updated = True
+        time.sleep(0.3)
+        print(f"  Fetched thumbnail for {listing_id}: {'found' if cache[listing_id] else 'not found'}")
+
+    if updated:
+        cache_path.write_text(json.dumps(cache, indent=2))
+
+    return cache

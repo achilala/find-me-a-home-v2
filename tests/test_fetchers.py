@@ -2,10 +2,18 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
+import pandas as pd
 import pytest
 
 from config import AppConfig
-from fetchers import cached_fetch, fetch_flood_features, fetch_school_zone, fetch_schools_in_area
+from fetchers import (
+    _extract_og_image,
+    cached_fetch,
+    fetch_flood_features,
+    fetch_listing_thumbnails,
+    fetch_school_zone,
+    fetch_schools_in_area,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -178,3 +186,73 @@ def test_fetch_flood_features_uses_cache(tmp_path):
 
     mock_get.assert_not_called()
     assert result == cached_data
+
+
+# ---------------------------------------------------------------------------
+# _extract_og_image
+# ---------------------------------------------------------------------------
+
+def test_extract_og_image_property_first():
+    html = '<meta property="og:image" content="https://example.com/img.jpg">'
+    assert _extract_og_image(html) == "https://example.com/img.jpg"
+
+
+def test_extract_og_image_content_first():
+    html = '<meta content="https://example.com/img.jpg" property="og:image">'
+    assert _extract_og_image(html) == "https://example.com/img.jpg"
+
+
+def test_extract_og_image_unescapes_entities():
+    html = '<meta property="og:image" content="https://example.com/img.jpg?w=500&amp;h=300">'
+    assert _extract_og_image(html) == "https://example.com/img.jpg?w=500&h=300"
+
+
+def test_extract_og_image_not_found():
+    assert _extract_og_image("<html><body>no og:image here</body></html>") == ""
+
+
+# ---------------------------------------------------------------------------
+# fetch_listing_thumbnails
+# ---------------------------------------------------------------------------
+
+def test_fetch_listing_thumbnails_uses_cache(tmp_path):
+    cfg = AppConfig(data_dir=tmp_path)
+    cached = {"111": "https://example.com/cached.jpg", "222": ""}
+    (tmp_path / "thumbnails.json").write_text(json.dumps(cached))
+
+    df = pd.DataFrame([
+        {"LISTING_ID": 111, "URL": "https://example.com/1"},
+        {"LISTING_ID": 222, "URL": float("nan")},
+    ])
+
+    with patch("fetchers.requests.get") as mock_get:
+        result = fetch_listing_thumbnails(df, cfg)
+
+    mock_get.assert_not_called()
+    assert result == cached
+
+
+def test_fetch_listing_thumbnails_fetches_missing(tmp_path):
+    cfg = AppConfig(data_dir=tmp_path)
+    df = pd.DataFrame([{"LISTING_ID": 999, "URL": "https://example.com/listing"}])
+
+    mock_resp = MagicMock()
+    mock_resp.text = '<meta property="og:image" content="https://example.com/img.jpg">'
+
+    with patch("fetchers.requests.get", return_value=mock_resp), \
+         patch("fetchers.time.sleep"):
+        result = fetch_listing_thumbnails(df, cfg)
+
+    assert result["999"] == "https://example.com/img.jpg"
+    assert (tmp_path / "thumbnails.json").exists()
+
+
+def test_fetch_listing_thumbnails_handles_request_error(tmp_path):
+    cfg = AppConfig(data_dir=tmp_path)
+    df = pd.DataFrame([{"LISTING_ID": 999, "URL": "https://example.com/listing"}])
+
+    with patch("fetchers.requests.get", side_effect=Exception("network error")), \
+         patch("fetchers.time.sleep"):
+        result = fetch_listing_thumbnails(df, cfg)
+
+    assert result["999"] == ""

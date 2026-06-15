@@ -3,7 +3,7 @@ import json
 import pandas as pd
 
 from config import AppConfig
-from fetchers import fetch_flood_features, fetch_school_zone, fetch_schools_in_area
+from fetchers import fetch_flood_features, fetch_listing_thumbnails, fetch_school_zone, fetch_schools_in_area
 from rendering import build_map
 
 
@@ -54,7 +54,11 @@ def main(initial_prefs: dict = None, config: AppConfig = None) -> None:
     ]
     print(f"  Showing {len(schools)} of {len(all_schools)} schools (in listing suburbs)")
 
-    build_map(df, flood_data, school_zones, schools, config, initial_prefs)
+    print("Fetching listing thumbnails...")
+    thumbnails = fetch_listing_thumbnails(df, config)
+    print(f"  {sum(1 for v in thumbnails.values() if v)} of {len(thumbnails)} have thumbnails")
+
+    build_map(df, flood_data, school_zones, schools, config, initial_prefs, thumbnails)
     print(f"\nSaved → {config.output_path.resolve()}")
 
 

@@ -170,7 +170,7 @@ def format_area(val, unit="m²") -> str:
 # Marker and popup builders
 # ---------------------------------------------------------------------------
 
-def make_popup(row: pd.Series, listing_id: str) -> str:
+def make_popup(row: pd.Series, listing_id: str, thumbnail_url: str = "") -> str:
     title = row.get("LISTING_TITLE", "") or ""
     url_raw = row.get("URL")
     url = "" if (url_raw is None or pd.isna(url_raw)) else str(url_raw).strip()
@@ -204,9 +204,14 @@ def make_popup(row: pd.Series, listing_id: str) -> str:
         "background:#f5f5f5;cursor:pointer;font-size:15px"
     )
 
+    thumb_html = (
+        f'<img src="{thumbnail_url}" style="width:100%;border-radius:4px;'
+        f'margin-bottom:8px;display:block" onerror="this.style.display=\'none\'">'
+    ) if thumbnail_url else ""
+
     return f"""
     <div style="font-family:sans-serif;font-size:13px;min-width:220px">
-      <b>{title}</b>
+      {thumb_html}<b>{title}</b>
       <div style="color:#555;margin:4px 0">{address}, {suburb}</div>
       <hr style="margin:6px 0;border-color:#eee">
       <table style="width:100%;border-collapse:collapse">
@@ -300,6 +305,7 @@ def build_map(
     schools: list,
     config: AppConfig,
     prefs: dict,
+    thumbnails: dict | None = None,
 ) -> None:
     """Assemble the full Folium map, save it, and post-process the HTML."""
     # The zone used for in/out colouring is always the first highlight school (MAGS = 69)
@@ -402,7 +408,7 @@ def build_map(
             location=[row["LATITUDE"], row["LONGITUDE"]],
             icon=make_icon(listing_id, colors["fill"], colors["stroke"], class_name=marker_class),
             tooltip=f"{address}, {suburb} — {price}",
-            popup=folium.Popup(make_popup(row, listing_id), max_width=280),
+            popup=folium.Popup(make_popup(row, listing_id, (thumbnails or {}).get(listing_id, "")), max_width=280),
         ).add_to(m)
 
     m.get_root().html.add_child(folium.Element(_build_legend(config)))
