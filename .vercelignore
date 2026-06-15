@@ -1,0 +1,9 @@
+.venv
+__pycache__
+*.pyc
+.coverage
+map.html
+public
+data/flood_plains.geojson
+data/flood_prone.geojson
+data/preferences.json

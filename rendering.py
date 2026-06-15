@@ -3,10 +3,7 @@ from pathlib import Path
 
 import folium
 import pandas as pd
-from shapely.geometry import Point, shape
-
-from shapely.geometry import mapping
-from shapely.geometry import shape as _shape
+from shapely.geometry import Point, mapping, shape
 
 from config import AppConfig
 
@@ -16,7 +13,7 @@ def _simplify_geojson(geojson: dict, tolerance: float) -> dict:
     features = []
     for f in geojson.get("features", []):
         try:
-            geom = _shape(f["geometry"]).simplify(tolerance, preserve_topology=True)
+            geom = shape(f["geometry"]).simplify(tolerance, preserve_topology=True)
             features.append({**f, "geometry": mapping(geom)})
         except Exception:
             features.append(f)
