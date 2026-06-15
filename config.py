@@ -1,5 +1,33 @@
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# Color palette cycled when adding new schools via manage_schools.py
+SCHOOL_COLOR_PALETTE = [
+    {"zone_fill": "#A5D6A7", "zone_stroke": "#66BB6A", "marker_bg": "#43A047"},  # green
+    {"zone_fill": "#CE93D8", "zone_stroke": "#AB47BC", "marker_bg": "#8E24AA"},  # purple
+    {"zone_fill": "#90CAF9", "zone_stroke": "#64B5F6", "marker_bg": "#1565C0"},  # blue
+    {"zone_fill": "#FFCC80", "zone_stroke": "#FFA726", "marker_bg": "#E65100"},  # orange
+    {"zone_fill": "#F48FB1", "zone_stroke": "#E91E63", "marker_bg": "#C2185B"},  # pink
+    {"zone_fill": "#80CBC4", "zone_stroke": "#4DB6AC", "marker_bg": "#00695C"},  # teal
+]
+
+_DEFAULT_SCHOOLS = {
+    69: {
+        "name": "Mt Albert Grammar School",
+        "short": "MAGS",
+        "zone_fill": "#A5D6A7",
+        "zone_stroke": "#66BB6A",
+        "marker_bg": "#43A047",
+    },
+    1282: {
+        "name": "Gladstone School (Auckland)",
+        "short": "Gladstone",
+        "zone_fill": "#CE93D8",
+        "zone_stroke": "#AB47BC",
+        "marker_bg": "#8E24AA",
+    },
+}
 
 
 @dataclass
@@ -18,22 +46,8 @@ class AppConfig:
         "/Schools_Directory_New_Zealand/FeatureServer/0"
     )
 
-    highlight_schools: dict = field(default_factory=lambda: {
-        69: {
-            "name": "Mt Albert Grammar School",
-            "short": "MAGS",
-            "zone_fill": "#A5D6A7",
-            "zone_stroke": "#66BB6A",
-            "marker_bg": "#43A047",
-        },
-        1282: {
-            "name": "Gladstone School (Auckland)",
-            "short": "Gladstone",
-            "zone_fill": "#CE93D8",
-            "zone_stroke": "#AB47BC",
-            "marker_bg": "#8E24AA",
-        },
-    })
+    # Populated from data/schools_config.json if present; falls back to _DEFAULT_SCHOOLS
+    highlight_schools: dict = field(default_factory=lambda: dict(_DEFAULT_SCHOOLS))
 
     listing_colors: dict = field(default_factory=lambda: {
         "in_zone":  {"fill": "#2ECC71", "stroke": "#27AE60"},
@@ -61,6 +75,18 @@ class AppConfig:
     # Use ~0.0001 for Vercel/static builds to keep HTML under 10 MB.
     simplify_tolerance: float = 0.0
 
+    def __post_init__(self) -> None:
+        # Load highlight_schools from data/schools_config.json when present,
+        # so changes made via manage_schools.py take effect without editing code.
+        config_path = self.data_dir / "schools_config.json"
+        if config_path.exists():
+            raw = json.loads(config_path.read_text())
+            self.highlight_schools = {int(k): v for k, v in raw.items()}
+
     @property
     def prefs_file(self) -> Path:
         return self.data_dir / "preferences.json"
+
+    @property
+    def schools_config_file(self) -> Path:
+        return self.data_dir / "schools_config.json"
