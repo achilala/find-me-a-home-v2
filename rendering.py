@@ -30,12 +30,17 @@ INTERACTION_JS = """
   var prefs = Object.assign({}, window.FMAH_PREFS || {});
   var hist = [];
 
+  var LS_KEY = 'fmah-prefs';
+
   function persist() {
     fetch('/api/prefs', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(prefs)
-    }).catch(function(){});
+    }).catch(function() {
+      // No server (e.g. Vercel static) — fall back to localStorage
+      localStorage.setItem(LS_KEY, JSON.stringify(prefs));
+    });
   }
 
   function applyMark(id, state) {
@@ -79,6 +84,7 @@ INTERACTION_JS = """
   window.fmahClear = function() {
     if (!confirm('Clear all saved preferences?')) return;
     prefs = {}; hist = [];
+    localStorage.removeItem(LS_KEY);
     persist();
     document.querySelectorAll('.mke').forEach(function(e) { e.style.display = 'none'; });
     document.querySelectorAll('.mkb').forEach(function(e) { e.style.display = 'block'; });
@@ -106,7 +112,14 @@ INTERACTION_JS = """
     fetch('/api/prefs')
       .then(function(r) { return r.json(); })
       .then(function(saved) { prefs = saved; applyAll(); })
-      .catch(function() { applyAll(); });
+      .catch(function() {
+        // No server — load from localStorage instead
+        try {
+          var stored = localStorage.getItem(LS_KEY);
+          if (stored) prefs = JSON.parse(stored);
+        } catch(e) {}
+        applyAll();
+      });
   });
 })();
 </script>
