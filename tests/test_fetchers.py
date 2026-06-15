@@ -202,6 +202,11 @@ def test_extract_og_image_content_first():
     assert _extract_og_image(html) == "https://example.com/img.jpg"
 
 
+def test_extract_og_image_single_quotes():
+    html = "<meta property='og:image' content='https://example.com/img.jpg'>"
+    assert _extract_og_image(html) == "https://example.com/img.jpg"
+
+
 def test_extract_og_image_unescapes_entities():
     html = '<meta property="og:image" content="https://example.com/img.jpg?w=500&amp;h=300">'
     assert _extract_og_image(html) == "https://example.com/img.jpg?w=500&h=300"
@@ -215,21 +220,17 @@ def test_extract_og_image_not_found():
 # fetch_listing_thumbnails
 # ---------------------------------------------------------------------------
 
-def test_fetch_listing_thumbnails_uses_cache(tmp_path):
+def test_fetch_listing_thumbnails_uses_cache_for_successful_entries(tmp_path):
+    # Non-empty cached entries are not re-fetched
     cfg = AppConfig(data_dir=tmp_path)
-    cached = {"111": "https://example.com/cached.jpg", "222": ""}
-    (tmp_path / "thumbnails.json").write_text(json.dumps(cached))
-
-    df = pd.DataFrame([
-        {"LISTING_ID": 111, "URL": "https://example.com/1"},
-        {"LISTING_ID": 222, "URL": float("nan")},
-    ])
+    (tmp_path / "thumbnails.json").write_text(json.dumps({"111": "https://example.com/img.jpg"}))
+    df = pd.DataFrame([{"LISTING_ID": 111, "URL": "https://example.com/1"}])
 
     with patch("fetchers.requests.get") as mock_get:
         result = fetch_listing_thumbnails(df, cfg)
 
     mock_get.assert_not_called()
-    assert result == cached
+    assert result["111"] == "https://example.com/img.jpg"
 
 
 def test_fetch_listing_thumbnails_fetches_missing(tmp_path):
@@ -245,6 +246,21 @@ def test_fetch_listing_thumbnails_fetches_missing(tmp_path):
 
     assert result["999"] == "https://example.com/img.jpg"
     assert (tmp_path / "thumbnails.json").exists()
+
+
+def test_fetch_listing_thumbnails_retries_empty_cached_entries(tmp_path):
+    # Previously-failed (empty string) entries should be retried
+    cfg = AppConfig(data_dir=tmp_path)
+    (tmp_path / "thumbnails.json").write_text(json.dumps({"999": ""}))
+    df = pd.DataFrame([{"LISTING_ID": 999, "URL": "https://example.com/listing"}])
+    mock_resp = MagicMock()
+    mock_resp.text = '<meta property="og:image" content="https://example.com/img.jpg">'
+
+    with patch("fetchers.requests.get", return_value=mock_resp), \
+         patch("fetchers.time.sleep"):
+        result = fetch_listing_thumbnails(df, cfg)
+
+    assert result["999"] == "https://example.com/img.jpg"
 
 
 def test_fetch_listing_thumbnails_handles_request_error(tmp_path):

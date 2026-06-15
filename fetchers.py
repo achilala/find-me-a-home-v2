@@ -95,10 +95,17 @@ def fetch_flood_features(service_url: str, bbox: str, cache_path: Path) -> dict:
 
 
 _OG_IMAGE_RE = re.compile(
-    r'property="og:image"\s+content="([^"]+)"|content="([^"]+)"\s+property="og:image"',
+    r'property=["\']og:image["\']\s+content=["\']([^"\']+)["\']'
+    r'|content=["\']([^"\']+)["\']\s+property=["\']og:image["\']',
     re.IGNORECASE,
 )
-_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; find-me-a-home-bot/1.0)"}
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
+    )
+}
 
 
 def _extract_og_image(page_html: str) -> str:
@@ -111,7 +118,9 @@ def _extract_og_image(page_html: str) -> str:
 def fetch_listing_thumbnails(df: pd.DataFrame, config: AppConfig) -> dict[str, str]:
     """Return {listing_id: thumbnail_url} for all listings, fetching missing ones."""
     cache_path = config.data_dir / "thumbnails.json"
-    cache: dict[str, str] = json.loads(cache_path.read_text()) if cache_path.exists() else {}
+    raw: dict[str, str] = json.loads(cache_path.read_text()) if cache_path.exists() else {}
+    # Drop empty entries so previously-failed fetches are retried
+    cache: dict[str, str] = {k: v for k, v in raw.items() if v}
 
     updated = False
     for _, row in df.iterrows():
