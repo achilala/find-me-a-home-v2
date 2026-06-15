@@ -321,6 +321,17 @@ def test_build_map_with_schools(minimal_config, minimal_df, minimal_geojson, min
     assert minimal_config.output_path.exists()
 
 
+def test_persist_falls_back_to_localstorage_on_non_ok_response():
+    # A 404 from Vercel is a valid HTTP response — fetch() resolves, not rejects.
+    # The JS must check r.ok and throw to reach the localStorage fallback.
+    content = (
+        Path(__file__).parent.parent / "rendering.py"
+    ).read_text()
+    assert "if (!r.ok) throw" in content, (
+        "persist() must check r.ok — a 404 resolves fetch() and won't reach .catch()"
+    )
+
+
 def test_post_process_injects_prefs(tmp_path):
     html_file = tmp_path / "map.html"
     html_file.write_text("<html><body></body></html>")

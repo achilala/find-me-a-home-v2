@@ -37,7 +37,12 @@ INTERACTION_JS = """
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(prefs)
-    }).catch(function() {
+    })
+    .then(function(r) {
+      // fetch resolves on any HTTP response, including 404 — check explicitly
+      if (!r.ok) throw new Error('no server');
+    })
+    .catch(function() {
       // No server (e.g. Vercel static) — fall back to localStorage
       localStorage.setItem(LS_KEY, JSON.stringify(prefs));
     });
