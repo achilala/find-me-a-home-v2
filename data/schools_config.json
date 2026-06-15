@@ -18,6 +18,7 @@
     "short": "WSC",
     "zone_fill": "#90CAF9",
     "zone_stroke": "#64B5F6",
-    "marker_bg": "#1565C0"
+    "marker_bg": "#1565C0",
+    "show": false
   }
 }

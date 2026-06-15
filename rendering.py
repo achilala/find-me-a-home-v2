@@ -363,6 +363,7 @@ def build_map(
         folium.GeoJson(
             school_zones[school_id],
             name=f"{info['short']} Enrolment Zone",
+            show=info.get("show", True),
             style_function=lambda _, i=info: {
                 "fillColor": i["zone_fill"],
                 "color": i["zone_stroke"],

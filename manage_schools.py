@@ -132,7 +132,8 @@ def cmd_add(args: argparse.Namespace, config: AppConfig) -> None:
         return
 
     short = args.short or derive_short_name(school["Org_Name"])
-    schools[sid] = {"name": school["Org_Name"], "short": short, **next_color(schools)}
+    schools[sid] = {"name": school["Org_Name"], "short": short, **next_color(schools),
+                    "show": not args.hidden}
     save_config(schools, config)
 
     print(f"\nAdded: {school['Org_Name']} (ID {sid}, short='{short}')")
@@ -173,6 +174,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_p.add_argument("--name", help="Search by school name (partial match)")
     add_p.add_argument("--id", type=int, help="Add by exact school ID")
     add_p.add_argument("--short", help="Short display name (auto-derived if omitted)")
+    add_p.add_argument("--hidden", action="store_true", help="Hide zone by default in layer control")
 
     remove_p = sub.add_parser("remove", help="Remove a school by ID")
     remove_p.add_argument("id", type=int, help="School ID to remove")
