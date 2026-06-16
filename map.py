@@ -17,8 +17,8 @@ def main(initial_prefs: dict = None, config: AppConfig = None) -> None:
     if initial_prefs is None:
         initial_prefs = json.loads(config.prefs_file.read_text()) if config.prefs_file.exists() else {}
 
-    # Load housing data (latest Housing_*.csv)
-    csv_files = sorted(config.data_dir.glob("Housing_*.csv"))
+    # Load housing data — matches Housing_*.csv (dated) or housing_data.csv
+    csv_files = sorted(config.data_dir.glob("*.csv"))
     df = pd.read_csv(csv_files[-1])
     df = df.dropna(subset=["LATITUDE", "LONGITUDE"])
     print(f"Loaded {len(df)} houses from {csv_files[-1].name}")
