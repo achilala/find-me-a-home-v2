@@ -192,7 +192,7 @@ def test_make_icon_has_mke_span():
 
 def test_make_icon_default_class_name():
     icon = make_icon("12345", "#2ECC71", "#27AE60")
-    assert icon.options["class_name"] == "fmah-marker"
+    assert icon.options["class_name"].startswith("fmah-marker")
 
 
 def test_make_icon_out_zone_class_name():

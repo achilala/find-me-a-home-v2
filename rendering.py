@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import folium
@@ -29,6 +30,7 @@ INTERACTION_JS = """
 (function(){
   var prefs = Object.assign({}, window.FMAH_PREFS || {});
   var hist = [];
+  var filters = { minBeds: 0, minBaths: 0, suburbs: [] };
 
   var LS_KEY = 'fmah-prefs';
 
@@ -39,11 +41,9 @@ INTERACTION_JS = """
       body: JSON.stringify(prefs)
     })
     .then(function(r) {
-      // fetch resolves on any HTTP response, including 404 — check explicitly
       if (!r.ok) throw new Error('no server');
     })
     .catch(function() {
-      // No server (e.g. Vercel static) — fall back to localStorage
       localStorage.setItem(LS_KEY, JSON.stringify(prefs));
     });
   }
@@ -80,15 +80,48 @@ INTERACTION_JS = """
     persist(); applyMark(last.id, last.prev || null); refresh();
   };
 
-  window.fmahToggleOutZone = function(hide) {
-    document.querySelectorAll('.fmah-out-zone').forEach(function(el) {
-      el.style.display = hide ? 'none' : '';
+  function _classVal(el, prefix) {
+    for (var i = 0; i < el.classList.length; i++) {
+      var c = el.classList[i];
+      if (c.indexOf(prefix) === 0) return c.slice(prefix.length);
+    }
+    return '';
+  }
+
+  window.fmahRefreshVisibility = function() {
+    var hideOut = document.getElementById('fmah-hide-out-zone');
+    var doHideOut = hideOut ? hideOut.checked : false;
+    document.querySelectorAll('.fmah-marker').forEach(function(el) {
+      var show = true;
+      if (doHideOut && el.classList.contains('fmah-out-zone')) show = false;
+      if (show && filters.minBeds > 0) {
+        if (parseInt(_classVal(el, 'fmah-beds-') || '0', 10) < filters.minBeds) show = false;
+      }
+      if (show && filters.minBaths > 0) {
+        if (parseInt(_classVal(el, 'fmah-baths-') || '0', 10) < filters.minBaths) show = false;
+      }
+      if (show && filters.suburbs.length > 0) {
+        if (filters.suburbs.indexOf(_classVal(el, 'fmah-suburb-')) < 0) show = false;
+      }
+      el.style.display = show ? '' : 'none';
     });
+  };
+
+  window.fmahOnFilterChange = function() {
+    var beds = document.getElementById('fmah-min-beds');
+    var baths = document.getElementById('fmah-min-baths');
+    filters.minBeds = beds ? parseInt(beds.value, 10) : 0;
+    filters.minBaths = baths ? parseInt(baths.value, 10) : 0;
+    prefs['_f'] = { mb: filters.minBeds, mba: filters.minBaths, s: filters.suburbs };
+    persist();
+    fmahRefreshVisibility();
   };
 
   window.fmahClear = function() {
     if (!confirm('Clear all saved preferences?')) return;
+    var savedFilters = prefs['_f'];
     prefs = {}; hist = [];
+    if (savedFilters) prefs['_f'] = savedFilters;
     localStorage.removeItem(LS_KEY);
     persist();
     document.querySelectorAll('.mke').forEach(function(e) { e.style.display = 'none'; });
@@ -99,19 +132,72 @@ INTERACTION_JS = """
   function refresh() {
     var u = document.getElementById('fmah-undo');
     if (u) u.disabled = !hist.length;
-    var n = Object.keys(prefs).length;
+    var n = Object.keys(prefs).filter(function(k) { return k !== '_f'; }).length;
     var c = document.getElementById('fmah-count');
     if (c) c.textContent = n ? '(' + n + ' saved)' : '';
   }
 
+  function buildSuburbFilters() {
+    var suburbMap = {};
+    document.querySelectorAll('.fmah-marker').forEach(function(el) {
+      var slug = _classVal(el, 'fmah-suburb-');
+      if (slug && !suburbMap[slug]) {
+        suburbMap[slug] = slug.replace(/-/g, ' ').replace(/\\b\\w/g, function(c) { return c.toUpperCase(); });
+      }
+    });
+    var container = document.getElementById('fmah-suburb-list');
+    if (!container || !Object.keys(suburbMap).length) return;
+    var slugs = Object.keys(suburbMap).sort(function(a, b) {
+      return suburbMap[a].localeCompare(suburbMap[b]);
+    });
+    slugs.forEach(function(slug) {
+      var label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = slug;
+      cb.checked = filters.suburbs.length === 0 || filters.suburbs.indexOf(slug) >= 0;
+      cb.onchange = function() {
+        var all = container.querySelectorAll('input');
+        var checked = container.querySelectorAll('input:checked');
+        filters.suburbs = checked.length === all.length
+          ? []
+          : Array.prototype.map.call(checked, function(c) { return c.value; });
+        prefs['_f'] = { mb: filters.minBeds, mba: filters.minBaths, s: filters.suburbs };
+        persist();
+        fmahRefreshVisibility();
+      };
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode('\\u00a0' + suburbMap[slug]));
+      container.appendChild(label);
+    });
+  }
+
+  function loadFilters() {
+    var f = prefs['_f'];
+    if (!f) return;
+    filters.minBeds = f.mb || 0;
+    filters.minBaths = f.mba || 0;
+    filters.suburbs = f.s || [];
+    var beds = document.getElementById('fmah-min-beds');
+    var baths = document.getElementById('fmah-min-baths');
+    if (beds) beds.value = String(filters.minBeds);
+    if (baths) baths.value = String(filters.minBaths);
+  }
+
   window.addEventListener('load', function() {
     function applyAll() {
-      var ids = Object.keys(prefs), attempts = 0;
+      var ids = Object.keys(prefs).filter(function(k) { return k !== '_f'; });
+      var attempts = 0;
       function tryApply() {
         var missing = ids.filter(function(id) { return !applyMark(id, prefs[id]); });
         refresh();
-        if (missing.length && ++attempts < 20) setTimeout(tryApply, 150);
-      else fmahToggleOutZone(true);  // apply default hidden state after marks are applied
+        if (missing.length && ++attempts < 20) {
+          setTimeout(tryApply, 150);
+        } else {
+          loadFilters();
+          buildSuburbFilters();
+          fmahRefreshVisibility();
+        }
       }
       setTimeout(tryApply, 100);
     }
@@ -119,7 +205,6 @@ INTERACTION_JS = """
       .then(function(r) { return r.json(); })
       .then(function(saved) { prefs = saved; applyAll(); })
       .catch(function() {
-        // No server — load from localStorage instead
         try {
           var stored = localStorage.getItem(LS_KEY);
           if (stored) prefs = JSON.parse(stored);
@@ -135,7 +220,8 @@ CONTROLS_HTML = """
 <div style="
     position:fixed;bottom:30px;left:10px;z-index:1000;
     background:white;padding:10px 14px;border-radius:8px;
-    box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:sans-serif;font-size:13px">
+    box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:sans-serif;font-size:13px;
+    max-height:90vh;overflow-y:auto">
   <div style="font-weight:bold;margin-bottom:8px">
     Preferences
     <span id="fmah-count" style="font-weight:normal;color:#888;margin-left:4px"></span>
@@ -149,8 +235,28 @@ CONTROLS_HTML = """
         background:white;cursor:pointer;font-size:13px;color:#c62828">Clear all</button>
   </div>
   <div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-bottom:6px">Filters</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <span style="color:#555;font-size:12px">Beds</span>
+      <select id="fmah-min-beds" onchange="fmahOnFilterChange()" style="font-size:12px;padding:2px 6px;border:1px solid #ddd;border-radius:3px">
+        <option value="0">Any</option>
+        <option value="3">3+</option>
+        <option value="4">4+</option>
+        <option value="5">5+</option>
+      </select>
+      <span style="color:#555;font-size:12px">Baths</span>
+      <select id="fmah-min-baths" onchange="fmahOnFilterChange()" style="font-size:12px;padding:2px 6px;border:1px solid #ddd;border-radius:3px">
+        <option value="0">Any</option>
+        <option value="2">2+</option>
+        <option value="3">3+</option>
+      </select>
+    </div>
+    <div style="font-size:12px;color:#555;margin-bottom:4px">Suburbs</div>
+    <div id="fmah-suburb-list" style="display:flex;flex-direction:column;gap:4px;font-size:12px"></div>
+  </div>
+  <div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee">
     <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-      <input type="checkbox" id="fmah-hide-out-zone" checked onchange="fmahToggleOutZone(this.checked)">
+      <input type="checkbox" id="fmah-hide-out-zone" checked onchange="fmahRefreshVisibility()">
       Hide out-of-zone listings
     </label>
   </div>
@@ -251,7 +357,14 @@ def make_popup(row: pd.Series, listing_id: str, thumbnail_url: str = "") -> str:
     """
 
 
-def make_icon(listing_id: str, fill_color: str, stroke_color: str, class_name: str = "fmah-marker") -> folium.DivIcon:
+def _suburb_slug(name: str) -> str:
+    return re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+
+
+def make_icon(listing_id: str, fill_color: str, stroke_color: str, class_name: str = "fmah-marker", beds: int = 0, baths: int = 0, suburb: str = "") -> folium.DivIcon:
+    extra = f" fmah-beds-{beds} fmah-baths-{baths}"
+    if suburb:
+        extra += f" fmah-suburb-{suburb}"
     html = (
         f'<div id="mk{listing_id}" style="position:relative;width:20px;height:20px">'
         f'<div class="mkb" style="width:20px;height:20px;border-radius:50%;'
@@ -260,7 +373,7 @@ def make_icon(listing_id: str, fill_color: str, stroke_color: str, class_name: s
         f'font-size:16px;line-height:20px;text-align:center;pointer-events:none"></span>'
         f'</div>'
     )
-    return folium.DivIcon(html=html, icon_size=(20, 20), icon_anchor=(10, 10), class_name=class_name)
+    return folium.DivIcon(html=html, icon_size=(20, 20), icon_anchor=(10, 10), class_name=class_name + extra)
 
 
 # ---------------------------------------------------------------------------
@@ -424,9 +537,11 @@ def build_map(
         inside = in_zone(row["LATITUDE"], row["LONGITUDE"])
         colors = config.listing_colors["in_zone"] if inside else config.listing_colors["out_zone"]
         marker_class = "fmah-marker" if inside else "fmah-marker fmah-out-zone"
+        beds = int(row["BEDROOM_COUNT"]) if pd.notna(row.get("BEDROOM_COUNT")) else 0
+        baths = int(row["BATHROOM_COUNT"]) if pd.notna(row.get("BATHROOM_COUNT")) else 0
         folium.Marker(
             location=[row["LATITUDE"], row["LONGITUDE"]],
-            icon=make_icon(listing_id, colors["fill"], colors["stroke"], class_name=marker_class),
+            icon=make_icon(listing_id, colors["fill"], colors["stroke"], class_name=marker_class, beds=beds, baths=baths, suburb=_suburb_slug(suburb)),
             tooltip=f"{address}, {suburb} — {price}",
             popup=folium.Popup(make_popup(row, listing_id, (thumbnails or {}).get(listing_id, "")), max_width=280),
         ).add_to(m)
