@@ -10,6 +10,10 @@ from config import AppConfig
 app = Flask(__name__)
 cfg = AppConfig()
 
+print("Generating map...")
+map_module.main(initial_prefs=json.loads(cfg.prefs_file.read_text()) if cfg.prefs_file.exists() else {}, config=cfg)
+print("Map ready.")
+
 
 def load_prefs() -> dict:
     if cfg.prefs_file.exists():
@@ -35,7 +39,5 @@ def save_prefs():
 
 
 if __name__ == "__main__":
-    print("Generating map...")
-    map_module.main(initial_prefs=load_prefs(), config=cfg)
     webbrowser.open(f"http://localhost:{cfg.port}")
     app.run(host="localhost", port=cfg.port)
