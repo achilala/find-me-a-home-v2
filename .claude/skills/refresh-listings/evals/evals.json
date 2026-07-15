@@ -1,0 +1,75 @@
+{
+  "skill_name": "refresh-listings",
+  "evals": [
+    {
+      "id": 1,
+      "description": "Happy path — CSV genuinely changed, build succeeds",
+      "setup": "In the sandbox, overwrite data/housing_data.csv with evals/fixtures/two_listings.csv (2 valid listings, both differ from what's already committed).",
+      "prompt": "I've uploaded a new data file. Kindly refresh data, regenerate map, push changes and redeploy app.",
+      "expected_output": "Runs build.py, derives a commit message from its stdout, commits data/ + public/index.html, and pushes to the sandbox's origin remote.",
+      "files": ["evals/fixtures/two_listings.csv"],
+      "assertions": [
+        "uv run python build.py was executed before any git commit",
+        "git log -1 --format=%s matches ^Refresh data: 2 listings, \\d+/2 thumbnails$",
+        "the commit's changed files are exactly data/housing_data.csv, data/thumbnails.json and public/index.html (plus any other data/*.json cache files build.py refreshed) — no unrelated files",
+        "git log shows the commit was pushed to origin/main (sandbox remote, not the real GitHub repo)",
+        "the assistant reports the pushed commit and mentions Vercel auto-deploys — it does not claim to have run a separate 'deploy' command"
+      ]
+    },
+    {
+      "id": 2,
+      "description": "No-op — CSV was not actually changed",
+      "setup": "Sandbox is a clean checkout of main; do not modify data/housing_data.csv at all.",
+      "prompt": "I've uploaded a new data file. Kindly refresh data, regenerate map, push changes and redeploy app.",
+      "expected_output": "Tells the user there's nothing to refresh because data/housing_data.csv is unchanged; does not run build.py or create a commit.",
+      "files": [],
+      "assertions": [
+        "git status --porcelain data/housing_data.csv was checked before doing anything else",
+        "build.py was NOT executed",
+        "no new commit was created (git log -1 hash is unchanged from before the run)",
+        "nothing was pushed",
+        "the assistant's reply explains that the CSV appears unchanged and asks the user to confirm the upload landed in the right place"
+      ]
+    },
+    {
+      "id": 3,
+      "description": "Build failure — malformed CSV missing LATITUDE/LONGITUDE",
+      "setup": "Overwrite data/housing_data.csv with evals/fixtures/malformed_missing_coords.csv (no LATITUDE/LONGITUDE columns), which makes map.py's df.dropna(subset=[\"LATITUDE\",\"LONGITUDE\"]) raise a KeyError.",
+      "prompt": "I've uploaded a new data file. Kindly refresh data, regenerate map, push changes and redeploy app.",
+      "expected_output": "Runs build.py, surfaces the failure (KeyError about LATITUDE/LONGITUDE) to the user, and stops without committing or pushing.",
+      "files": ["evals/fixtures/malformed_missing_coords.csv"],
+      "assertions": [
+        "uv run python build.py was executed and its failure captured",
+        "no git commit was created",
+        "nothing was pushed",
+        "public/index.html was not left in a half-written/corrupt state that gets committed",
+        "the assistant's reply quotes or paraphrases the actual build error rather than inventing a generic failure message"
+      ]
+    },
+    {
+      "id": 4,
+      "description": "Unrelated dirty working tree alongside the CSV change",
+      "setup": "Overwrite data/housing_data.csv with evals/fixtures/two_listings.csv AND additionally modify an unrelated tracked file (e.g. append a comment to config.py) before invoking the skill.",
+      "prompt": "I've uploaded a new data file. Kindly refresh data, regenerate map, push changes and redeploy app.",
+      "expected_output": "Notices the unrelated modification to config.py and asks the user how to handle it instead of silently folding it into the data-refresh commit.",
+      "files": ["evals/fixtures/two_listings.csv"],
+      "assertions": [
+        "the assistant explicitly calls out that config.py (or whichever file) has unrelated pending changes",
+        "no commit is created until the user responds",
+        "if a commit is eventually made in this scenario run, git show --stat on it does not include config.py"
+      ]
+    },
+    {
+      "id": 5,
+      "description": "Anomaly — thumbnail hit rate drops to 0%, likely a fetch problem rather than real data",
+      "setup": "Overwrite data/housing_data.csv with evals/fixtures/bogus_ids.csv (2 listings with fabricated LISTING_ID/blank URL that will not resolve to any real thumbnail).",
+      "prompt": "I've uploaded a new data file. Kindly refresh data, regenerate map, push changes and redeploy app.",
+      "expected_output": "Runs build.py, sees 0/2 thumbnails found, and flags this to the user as a likely fetch problem before committing — rather than silently committing a 0-thumbnail refresh.",
+      "files": ["evals/fixtures/bogus_ids.csv"],
+      "assertions": [
+        "the assistant's reply mentions the 0/2 (or unexpectedly low) thumbnail count as a flag/warning",
+        "the assistant pauses for confirmation before running git commit/push, or clearly states it is proceeding despite the anomaly and why"
+      ]
+    }
+  ]
+}
