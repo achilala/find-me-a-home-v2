@@ -30,19 +30,26 @@ Reproduces the manual workflow documented in `README.md` under "Updating listing
 
    Compose: `Refresh data: {N} listings, {X}/{Y} thumbnails` (matches every prior commit on this branch — check with `git log --oneline -5` if unsure of the exact phrasing).
 
-3. **Review the diff.** Run `git status` and `git diff --stat data/ public/index.html` and sanity-check that only `data/housing_data.csv`, `data/thumbnails.json` (if present) and `public/index.html` changed.
+3. **Summarize listing changes.** Before staging anything, diff the pre-refresh CSV (still at `HEAD` since nothing's committed yet) against the working tree copy, keyed by `LISTING_ID`:
+   ```bash
+   git show HEAD:data/housing_data.csv > /tmp/old_housing_data.csv
+   uv run python .claude/skills/refresh-listings/diff_listings.py /tmp/old_housing_data.csv data/housing_data.csv
+   ```
+   This prints new, removed, and changed listings (changed = any field differs other than `LISTING_AGE`, which ticks up on every refresh regardless of real changes). Include this summary in your final report to the user, and pass it as the commit body (`git commit -m "<subject>" -m "<summary>"`) so it's preserved in history.
 
-4. **Commit.**
+4. **Review the diff.** Run `git status` and `git diff --stat data/ public/index.html` and sanity-check that only `data/housing_data.csv`, `data/thumbnails.json` (if present) and `public/index.html` changed.
+
+5. **Commit.**
    ```bash
    git add data/ public/index.html
-   git commit -m "Refresh data: {N} listings, {X}/{Y} thumbnails"
+   git commit -m "Refresh data: {N} listings, {X}/{Y} thumbnails" -m "{listing changes summary from step 3}"
    ```
 
-5. **Push.**
+6. **Push.**
    ```bash
    git push origin main
    ```
-   Vercel auto-deploys on push per `vercel.json` — there is no separate deploy command to run. Report the pushed commit hash to the user as confirmation.
+   Vercel auto-deploys on push per `vercel.json` — there is no separate deploy command to run. Report the pushed commit hash and the listing changes summary to the user as confirmation.
 
 ## Notes
 
@@ -50,3 +57,4 @@ Reproduces the manual workflow documented in `README.md` under "Updating listing
 - `data/thumbnails.json` and the other `data/*.json` caches (schools, zones) are checked into git, not gitignored — `build.py` re-fetches and may add/refresh entries; include the whole `data/` dir in the commit, not just the CSV.
 - This skill intentionally does **not** run `uv run pytest` — the test suite covers `map.py`/`rendering.py`/`fetchers.py` logic, not data content, and CLAUDE.md's HTTP-mocking rule means the tests can't validate a live build anyway. If you've also changed source code (not just data), run the test suite separately before using this skill.
 - If `uv run python build.py` reports 0 thumbnails found for listings that previously had one, or a suspiciously low listing count, flag it to the user before committing — it may indicate a fetch failure rather than real data changes.
+- `diff_listings.py` only reads CSVs (stdlib `csv` module, no deps) — safe to run any time between the build and the commit. Run it before `git add`/`git commit` since it relies on `git show HEAD:...` to reconstruct the pre-refresh CSV.

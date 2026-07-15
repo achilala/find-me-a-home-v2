@@ -13,7 +13,8 @@
         "git log -1 --format=%s matches ^Refresh data: 2 listings, \\d+/2 thumbnails$",
         "the commit's changed files are exactly data/housing_data.csv, data/thumbnails.json and public/index.html (plus any other data/*.json cache files build.py refreshed) — no unrelated files",
         "git log shows the commit was pushed to origin/main (sandbox remote, not the real GitHub repo)",
-        "the assistant reports the pushed commit and mentions Vercel auto-deploys — it does not claim to have run a separate 'deploy' command"
+        "the assistant reports the pushed commit and mentions Vercel auto-deploys — it does not claim to have run a separate 'deploy' command",
+        "the assistant's reply and/or the commit body summarizes which listings are new/removed/changed (via diff_listings.py against the pre-refresh HEAD copy), not just the aggregate counts"
       ]
     },
     {
