@@ -75,6 +75,10 @@ class AppConfig:
     # Use ~0.0001 for Vercel/static builds to keep HTML under 10 MB.
     simplify_tolerance: float = 0.0
 
+    # When True, flood GeoJSON is written as separate static files and loaded
+    # client-side via fetch() instead of being inlined into the HTML by Folium.
+    externalize_flood: bool = False
+
     def __post_init__(self) -> None:
         # Load highlight_schools from data/schools_config.json when present,
         # so changes made via manage_schools.py take effect without editing code.

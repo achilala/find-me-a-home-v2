@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .coverage
 map.html
+/flood_plains.json
+/flood_prone.json
 data/flood_plains.geojson
 data/flood_prone.geojson
 data/preferences.json

@@ -85,3 +85,11 @@ def test_simplify_tolerance_default_zero():
 
 def test_simplify_tolerance_custom():
     assert AppConfig(simplify_tolerance=0.0001).simplify_tolerance == 0.0001
+
+
+def test_externalize_flood_default_false():
+    assert AppConfig().externalize_flood is False
+
+
+def test_externalize_flood_custom():
+    assert AppConfig(externalize_flood=True).externalize_flood is True

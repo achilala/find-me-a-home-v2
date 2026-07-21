@@ -20,6 +20,43 @@ def _simplify_geojson(geojson: dict, tolerance: float) -> dict:
             features.append(f)
     return {**geojson, "features": features}
 
+
+def _round_coords(coords, decimals: int):
+    """Recursively round a GeoJSON coordinate array to a fixed decimal precision."""
+    if isinstance(coords[0], (int, float)):
+        return [round(c, decimals) for c in coords]
+    return [_round_coords(c, decimals) for c in coords]
+
+
+def _prepare_flood_geojson(
+    geojson: dict,
+    tolerance: float,
+    keep_properties: list[str],
+    coord_precision: int = 6,
+) -> dict:
+    """Simplify, round coordinates, and strip unused properties for a web-optimized flood layer."""
+    if tolerance > 0:
+        geojson = _simplify_geojson(geojson, tolerance)
+    features = []
+    for f in geojson.get("features", []):
+        geometry = {**f["geometry"], "coordinates": _round_coords(f["geometry"]["coordinates"], coord_precision)}
+        properties = {k: v for k, v in (f.get("properties") or {}).items() if k in keep_properties}
+        features.append({**f, "geometry": geometry, "properties": properties})
+    return {**geojson, "features": features}
+
+
+def write_flood_geojson(flood_data: dict, config: AppConfig) -> list[Path]:
+    """Write web-optimized flood GeoJSON as separate static files next to the map output."""
+    keep_properties = {"flood_plains": ["Hazard"], "flood_prone": []}
+    output_dir = config.output_path.parent
+    written = []
+    for key, geojson in flood_data.items():
+        optimized = _prepare_flood_geojson(geojson, config.simplify_tolerance, keep_properties.get(key, []))
+        path = output_dir / f"{key}.json"
+        path.write_text(json.dumps(optimized, separators=(",", ":")))
+        written.append(path)
+    return written
+
 # ---------------------------------------------------------------------------
 # Client-side JS and controls — injected via HTML post-processing to avoid
 # Jinja2 brace conflicts in Folium's template engine.
@@ -263,6 +300,37 @@ CONTROLS_HTML = """
 </div>
 """
 
+# Loads flood GeoJSON asynchronously via fetch() instead of Folium's inline
+# embed, so the map renders before the (much larger) flood layers arrive.
+# __MAP_VAR__/__LC_VAR__ are substituted with the Folium-generated map and
+# layer-control variable names, which are plain top-level `var`s and so are
+# reachable as globals from this separate <script> tag.
+FLOOD_LOADER_JS = """
+<script>
+(function() {
+  var floodLayers = __LAYER_CONFIG__;
+  floodLayers.forEach(function(cfg) {
+    var layer = L.geoJson(null, {
+      style: function() {
+        return { fillColor: cfg.fill, color: cfg.stroke, weight: 1, fillOpacity: cfg.opacity };
+      },
+      onEachFeature: function(feature, lyr) {
+        if (cfg.tooltipField && feature.properties && feature.properties[cfg.tooltipField]) {
+          lyr.bindTooltip('<table><tr><th>Type:</th><td>' + feature.properties[cfg.tooltipField] + '</td></tr></table>');
+        }
+      }
+    });
+    layer.addTo(__MAP_VAR__);
+    __LC_VAR__.addOverlay(layer, cfg.name);
+    fetch(cfg.url)
+      .then(function(r) { return r.json(); })
+      .then(function(data) { layer.addData(data); })
+      .catch(function(err) { console.warn('Failed to load ' + cfg.name, err); });
+  });
+})();
+</script>
+"""
+
 
 # ---------------------------------------------------------------------------
 # Formatting helpers
@@ -422,11 +490,26 @@ def _build_legend(config: AppConfig) -> str:
     """
 
 
-def post_process_html(output_path: Path, prefs: dict) -> None:
+def post_process_html(output_path: Path, prefs: dict, flood_layer_config: list[dict] | None = None) -> None:
     """Inject preferences, controls, and interaction JS into saved map HTML."""
     prefs_script = f"<script>var FMAH_PREFS={json.dumps(prefs)};</script>"
     html = output_path.read_text()
     html = html.replace("</body>", prefs_script + CONTROLS_HTML + INTERACTION_JS + "</body>")
+
+    if flood_layer_config:
+        map_match = re.search(r'var (map_[a-f0-9]+)', html)
+        lc_match = re.search(r'var (layer_control_[a-f0-9]+)', html)
+        if not map_match or not lc_match:
+            raise ValueError("Could not find Folium map/layer-control variables in generated HTML")
+        loader_js = (
+            FLOOD_LOADER_JS
+            .replace("__LAYER_CONFIG__", json.dumps(flood_layer_config))
+            .replace("__MAP_VAR__", map_match.group(1))
+            .replace("__LC_VAR__", lc_match.group(1))
+        )
+        # Insert after the Folium script block closes, so map/layer-control vars exist.
+        html = re.sub(r"</script>(\s*)</html>", lambda m: f"</script>{m.group(1)}{loader_js}\n</html>", html, count=1)
+
     output_path.write_text(html)
 
 
@@ -449,27 +532,43 @@ def build_map(
         pt = Point(lng, lat)
         return any(poly.contains(pt) for poly in mags_polygons)
 
-    if config.simplify_tolerance > 0:
-        flood_data = {k: _simplify_geojson(v, config.simplify_tolerance) for k, v in flood_data.items()}
+    flood_layer_config = None
+    if config.externalize_flood:
+        write_flood_geojson(flood_data, config)
+        flood_layer_config = [
+            {
+                "url": f"{key}.json",
+                "name": layer["name"],
+                "fill": layer["fill"],
+                "stroke": layer["stroke"],
+                "opacity": layer["opacity"],
+                "tooltipField": "Hazard" if key == "flood_plains" else None,
+            }
+            for key, layer in config.flood_layers.items()
+        ]
+    else:
+        if config.simplify_tolerance > 0:
+            flood_data = {k: _simplify_geojson(v, config.simplify_tolerance) for k, v in flood_data.items()}
 
     center = [df["LATITUDE"].mean(), df["LONGITUDE"].mean()]
     m = folium.Map(location=center, zoom_start=13, tiles="CartoDB positron")
 
-    # Flood zone layers
-    for key, layer in config.flood_layers.items():
-        folium.GeoJson(
-            flood_data[key],
-            name=layer["name"],
-            style_function=lambda _, l=layer: {
-                "fillColor": l["fill"],
-                "color": l["stroke"],
-                "weight": 1,
-                "fillOpacity": l["opacity"],
-            },
-            tooltip=folium.GeoJsonTooltip(
-                fields=["Hazard"], aliases=["Type:"], localize=True,
-            ) if key == "flood_plains" else None,
-        ).add_to(m)
+    # Flood zone layers (skipped when externalized — loaded client-side instead, see FLOOD_LOADER_JS)
+    if not config.externalize_flood:
+        for key, layer in config.flood_layers.items():
+            folium.GeoJson(
+                flood_data[key],
+                name=layer["name"],
+                style_function=lambda _, l=layer: {
+                    "fillColor": l["fill"],
+                    "color": l["stroke"],
+                    "weight": 1,
+                    "fillOpacity": l["opacity"],
+                },
+                tooltip=folium.GeoJsonTooltip(
+                    fields=["Hazard"], aliases=["Type:"], localize=True,
+                ) if key == "flood_plains" else None,
+            ).add_to(m)
 
     # Highlighted school zones
     for school_id, info in config.highlight_schools.items():
@@ -550,4 +649,4 @@ def build_map(
     folium.LayerControl(collapsed=False).add_to(m)
 
     m.save(str(config.output_path))
-    post_process_html(config.output_path, prefs)
+    post_process_html(config.output_path, prefs, flood_layer_config)

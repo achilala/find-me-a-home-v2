@@ -34,6 +34,16 @@ def save_prefs():
     return jsonify({"ok": True})
 
 
+@app.route("/<path:filename>")
+def static_files(filename):
+    """Serve generated static assets (e.g. externalized flood GeoJSON) alongside the map."""
+    output_dir = Path(cfg.output_path).resolve().parent
+    file_path = (output_dir / filename).resolve()
+    if output_dir in file_path.parents and file_path.is_file():
+        return send_file(file_path)
+    return "Not found", 404
+
+
 if __name__ == "__main__":
     print("Generating map...")
     map_module.main(initial_prefs=load_prefs(), config=cfg)

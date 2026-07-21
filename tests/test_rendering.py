@@ -10,12 +10,15 @@ from config import AppConfig
 from rendering import (
     CONTROLS_HTML,
     INTERACTION_JS,
+    _prepare_flood_geojson,
+    _round_coords,
     build_map,
     format_area,
     format_price,
     make_icon,
     make_popup,
     post_process_html,
+    write_flood_geojson,
 )
 
 
@@ -365,3 +368,129 @@ def test_post_process_preserves_body_close(tmp_path):
     content = html_file.read_text()
     assert "</body>" in content
     assert "<p>content</p>" in content
+
+
+def test_post_process_injects_flood_loader_when_config_given(tmp_path):
+    html_file = tmp_path / "map.html"
+    html_file.write_text(
+        "<html><body></body>"
+        "<script>var map_abc123 = L.map('x');\n"
+        "var layer_control_abc123 = L.control.layers().addTo(map_abc123);\n"
+        "</script>\n</html>"
+    )
+    flood_layer_config = [
+        {"url": "flood_plains.json", "name": "Flood Plains", "fill": "#90CAF9",
+         "stroke": "#64B5F6", "opacity": 0.35, "tooltipField": "Hazard"},
+    ]
+    post_process_html(html_file, {}, flood_layer_config)
+    content = html_file.read_text()
+    assert "map_abc123" in content
+    assert "layer_control_abc123" in content
+    assert "flood_plains.json" in content
+    assert content.index("var map_abc123") < content.rindex("map_abc123")
+
+
+def test_post_process_without_flood_config_unchanged(tmp_path):
+    html_file = tmp_path / "map.html"
+    html_file.write_text("<html><body></body><script>var map_abc = 1;</script>\n</html>")
+    post_process_html(html_file, {}, None)
+    content = html_file.read_text()
+    assert "fetch(cfg.url)" not in content
+
+
+def test_post_process_raises_when_map_var_not_found(tmp_path):
+    html_file = tmp_path / "map.html"
+    html_file.write_text("<html><body></body><script>no map var here</script>\n</html>")
+    flood_layer_config = [{"url": "x.json", "name": "X", "fill": "#fff", "stroke": "#000",
+                            "opacity": 0.3, "tooltipField": None}]
+    with pytest.raises(ValueError):
+        post_process_html(html_file, {}, flood_layer_config)
+
+
+# ---------------------------------------------------------------------------
+# _round_coords
+# ---------------------------------------------------------------------------
+
+def test_round_coords_point():
+    assert _round_coords([174.123456789, -36.987654321], 6) == [174.123457, -36.987654]
+
+
+def test_round_coords_nested_polygon():
+    coords = [[[174.1234567, -36.9876543], [174.2, -36.8]]]
+    result = _round_coords(coords, 4)
+    assert result == [[[174.1235, -36.9877], [174.2, -36.8]]]
+
+
+# ---------------------------------------------------------------------------
+# _prepare_flood_geojson / write_flood_geojson
+# ---------------------------------------------------------------------------
+
+def test_prepare_flood_geojson_rounds_coordinates(sample_geojson):
+    sample_geojson["features"][0]["geometry"]["coordinates"] = [[[174.123456789, -36.987654321]] * 4]
+    result = _prepare_flood_geojson(sample_geojson, tolerance=0, keep_properties=["Hazard"])
+    coords = result["features"][0]["geometry"]["coordinates"][0][0]
+    assert coords == [174.123457, -36.987654]
+
+
+def test_prepare_flood_geojson_strips_properties(sample_geojson):
+    result = _prepare_flood_geojson(sample_geojson, tolerance=0, keep_properties=[])
+    assert result["features"][0]["properties"] == {}
+
+
+def test_prepare_flood_geojson_keeps_specified_properties(sample_geojson):
+    result = _prepare_flood_geojson(sample_geojson, tolerance=0, keep_properties=["Hazard"])
+    assert result["features"][0]["properties"] == {"Hazard": "Flood Plain"}
+
+
+def test_write_flood_geojson_creates_files(tmp_path, sample_geojson):
+    config = AppConfig(data_dir=tmp_path, output_path=tmp_path / "index.html")
+    flood_data = {"flood_plains": sample_geojson, "flood_prone": sample_geojson}
+    written = write_flood_geojson(flood_data, config)
+    assert (tmp_path / "flood_plains.json").exists()
+    assert (tmp_path / "flood_prone.json").exists()
+    assert len(written) == 2
+
+
+def test_write_flood_geojson_strips_properties_per_layer(tmp_path, sample_geojson):
+    config = AppConfig(data_dir=tmp_path, output_path=tmp_path / "index.html")
+    flood_data = {"flood_plains": sample_geojson, "flood_prone": sample_geojson}
+    write_flood_geojson(flood_data, config)
+    plains = json.loads((tmp_path / "flood_plains.json").read_text())
+    prone = json.loads((tmp_path / "flood_prone.json").read_text())
+    assert plains["features"][0]["properties"] == {"Hazard": "Flood Plain"}
+    assert prone["features"][0]["properties"] == {}
+
+
+# ---------------------------------------------------------------------------
+# build_map with externalize_flood
+# ---------------------------------------------------------------------------
+
+def test_build_map_externalize_flood_writes_external_files(minimal_df, minimal_geojson, minimal_school_zone, tmp_path):
+    config = AppConfig(data_dir=tmp_path, output_path=tmp_path / "index.html", externalize_flood=True)
+    flood_data = {"flood_plains": minimal_geojson, "flood_prone": minimal_geojson}
+    school_zones = {69: minimal_school_zone, 1282: minimal_school_zone}
+    build_map(minimal_df, flood_data, school_zones, [], config, {})
+    assert (tmp_path / "flood_plains.json").exists()
+    assert (tmp_path / "flood_prone.json").exists()
+
+
+def test_build_map_externalize_flood_excludes_inline_geojson(minimal_df, minimal_geojson, minimal_school_zone, tmp_path):
+    config = AppConfig(data_dir=tmp_path, output_path=tmp_path / "index.html", externalize_flood=True)
+    flood_data = {"flood_plains": minimal_geojson, "flood_prone": minimal_geojson}
+    school_zones = {69: minimal_school_zone, 1282: minimal_school_zone}
+    build_map(minimal_df, flood_data, school_zones, [], config, {})
+    content = config.output_path.read_text()
+    # -36.85 only appears in the flood polygon fixture — must not be inlined
+    assert "-36.85" not in content
+    assert "fetch(" in content
+    assert "flood_plains.json" in content
+    assert "flood_prone.json" in content
+
+
+def test_build_map_default_does_not_write_external_files(minimal_config, minimal_df, minimal_geojson, minimal_school_zone):
+    flood_data = {"flood_plains": minimal_geojson, "flood_prone": minimal_geojson}
+    school_zones = {69: minimal_school_zone, 1282: minimal_school_zone}
+    build_map(minimal_df, flood_data, school_zones, [], minimal_config, {})
+    assert not (minimal_config.output_path.parent / "flood_plains.json").exists()
+    content = minimal_config.output_path.read_text()
+    assert "fetch(cfg.url)" not in content

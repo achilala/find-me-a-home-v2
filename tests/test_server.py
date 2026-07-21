@@ -54,3 +54,22 @@ def test_index_serves_map_html(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert b"map" in resp.data
+
+
+def test_static_file_serving(client, tmp_path):
+    (tmp_path / "flood_plains.json").write_text('{"type": "FeatureCollection", "features": []}')
+    resp = client.get("/flood_plains.json")
+    assert resp.status_code == 200
+    assert b"FeatureCollection" in resp.data
+
+
+def test_static_file_not_found(client):
+    resp = client.get("/does_not_exist.json")
+    assert resp.status_code == 404
+
+
+def test_static_file_rejects_path_traversal(client, tmp_path):
+    outside_file = tmp_path.parent / "secret.txt"
+    outside_file.write_text("secret")
+    resp = client.get("/../secret.txt")
+    assert resp.status_code == 404

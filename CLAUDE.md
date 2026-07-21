@@ -23,9 +23,9 @@ The project is split into four source modules:
 |---|---|
 | `config.py` | Single source of truth — `AppConfig` dataclass with all constants (colours, URLs, school IDs, bbox, port). Change a value here and it propagates everywhere. |
 | `fetchers.py` | All ArcGIS data fetching. `cached_fetch()` is the single DRY cache-check-or-call pattern used by all three fetch functions. |
-| `rendering.py` | Map assembly — `build_map()`, `post_process_html()`, `make_popup()`, `make_icon()`, `format_price()`, `format_area()`. Also holds `INTERACTION_JS` and `CONTROLS_HTML` string templates. |
+| `rendering.py` | Map assembly — `build_map()`, `post_process_html()`, `make_popup()`, `make_icon()`, `format_price()`, `format_area()`. Also holds `INTERACTION_JS`, `CONTROLS_HTML`, and `FLOOD_LOADER_JS` string templates. When `AppConfig.externalize_flood` is set, `write_flood_geojson()` writes flood layers as separate `*.json` files (simplified, precision-reduced, property-stripped) next to the map output instead of inlining them, and `FLOOD_LOADER_JS` fetches them client-side. |
 | `map.py` | Thin ~35-line orchestrator: loads config → reads CSV → calls fetchers → calls `build_map()`. |
-| `server.py` | Flask app. Serves `map.html`, handles `GET/POST /api/prefs` to persist preferences to `data/preferences.json`. |
+| `server.py` | Flask app. Serves `map.html`, handles `GET/POST /api/prefs` to persist preferences to `data/preferences.json`, and serves any other static file (e.g. externalized flood GeoJSON) from the output directory. |
 
 ## Key config values (all in `config.py`)
 
@@ -35,6 +35,8 @@ The project is split into four source modules:
 | `AppConfig.highlight_schools` | Dict of `school_id → {name, short, zone_fill, zone_stroke, marker_bg}` |
 | `AppConfig.listing_colors` | `in_zone` and `out_zone` fill/stroke colours for listing markers |
 | `AppConfig.flood_layers` | Dict of flood layer configs — URL, name, colours, opacity |
+| `AppConfig.simplify_tolerance` | Shapely simplification tolerance (degrees) applied to flood geometry; 0 = off |
+| `AppConfig.externalize_flood` | When `True`, flood layers are written as external `*.json` files and loaded via `fetch()` instead of being inlined into the HTML by Folium (used by `build.py` to keep `public/index.html` small) |
 | `AppConfig.port` | Flask server port (default 5000) |
 
 ## Test structure
