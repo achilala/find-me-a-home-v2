@@ -99,12 +99,12 @@ _OG_IMAGE_RE = re.compile(
     r'|content=["\']([^"\']+)["\']\s+property=["\']og:image["\']',
     re.IGNORECASE,
 )
+# TradeMe serves its listing pages as an unrendered SPA shell to normal browser
+# user-agents (no og:image present), but serves the fully prerendered page with
+# real Open Graph tags to known link-unfurling crawlers (Facebook, Twitter, Slack).
+# Use that UA so we get the same metadata those services read.
 _HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/125.0.0.0 Safari/537.36"
-    )
+    "User-Agent": "facebookexternalhit/1.1",
 }
 
 
