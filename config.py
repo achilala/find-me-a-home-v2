@@ -61,6 +61,7 @@ class AppConfig:
             "fill": "#90CAF9",
             "stroke": "#64B5F6",
             "opacity": 0.35,
+            "show": False,
         },
         "flood_prone": {
             "url": "https://services1.arcgis.com/n4yPwebTjJCmXB6W/arcgis/rest/services/Flood_Prone_Areas/FeatureServer/0",
@@ -68,6 +69,7 @@ class AppConfig:
             "fill": "#FFCC80",
             "stroke": "#FFA726",
             "opacity": 0.3,
+            "show": False,
         },
     })
 

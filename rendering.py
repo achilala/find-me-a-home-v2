@@ -320,7 +320,7 @@ FLOOD_LOADER_JS = """
         }
       }
     });
-    layer.addTo(__MAP_VAR__);
+    if (cfg.show) { layer.addTo(__MAP_VAR__); }
     __LC_VAR__.addOverlay(layer, cfg.name);
     fetch(cfg.url)
       .then(function(r) { return r.json(); })
@@ -543,6 +543,7 @@ def build_map(
                 "stroke": layer["stroke"],
                 "opacity": layer["opacity"],
                 "tooltipField": "Hazard" if key == "flood_plains" else None,
+                "show": layer.get("show", True),
             }
             for key, layer in config.flood_layers.items()
         ]
@@ -559,6 +560,7 @@ def build_map(
             folium.GeoJson(
                 flood_data[key],
                 name=layer["name"],
+                show=layer.get("show", True),
                 style_function=lambda _, l=layer: {
                     "fillColor": l["fill"],
                     "color": l["stroke"],
