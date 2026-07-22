@@ -590,7 +590,7 @@ def build_map(
 
     # School markers
     highlight_by_name = {i["name"]: i for i in config.highlight_schools.values()}
-    schools_group = folium.FeatureGroup(name="Schools", show=True)
+    schools_group = folium.FeatureGroup(name="Schools", show=False)
     for s in schools:
         name = s.get("Org_Name", "")
         lat, lng = s.get("Latitude"), s.get("Longitude")
