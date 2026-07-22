@@ -4,16 +4,14 @@
     "short": "MAGS",
     "zone_fill": "#A5D6A7",
     "zone_stroke": "#66BB6A",
-    "marker_bg": "#43A047",
-    "show": false
+    "marker_bg": "#43A047"
   },
   "1282": {
     "name": "Gladstone School (Auckland)",
     "short": "Gladstone",
     "zone_fill": "#CE93D8",
     "zone_stroke": "#AB47BC",
-    "marker_bg": "#8E24AA",
-    "show": false
+    "marker_bg": "#8E24AA"
   },
   "48": {
     "name": "Western Springs College-Ngā Puna o Waiōrea",
