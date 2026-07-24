@@ -1,6 +1,6 @@
 ---
 name: refresh-listings
-description: Regenerate and deploy the map after data/housing_data.csv has been updated. Finds the latest Housing_*.csv export in ~/Downloads and copies it into data/housing_data.csv, rebuilds public/index.html via build.py, commits the refreshed data + build output with the repo's standard "Refresh data: N listings, X/Y thumbnails" message, and pushes to main so Vercel auto-deploys. Use when the user says they've uploaded/updated the housing data, or asks to "refresh data", "regenerate the map", "redeploy", or "push the new listings".
+description: Regenerate and deploy the map after data/housing_data.csv has been updated. Finds the latest find-me-a-home_*.csv export in ~/Downloads and copies it into data/housing_data.csv, rebuilds public/index.html via build.py, commits the refreshed data + build output with the repo's standard "Refresh data: N listings, X/Y thumbnails" message, and pushes to main so Vercel auto-deploys. Use when the user says they've uploaded/updated the housing data, or asks to "refresh data", "regenerate the map", "redeploy", or "push the new listings".
 ---
 
 # refresh-listings
@@ -11,13 +11,13 @@ Reproduces the manual workflow documented in `README.md` under "Updating listing
 
 0. Find and copy the latest export from Downloads:
    ```bash
-   ls -t /Users/aka.chilala/Downloads/Housing_*.csv 2>/dev/null | head -1
+   ls -t /Users/aka.chilala/Downloads/find-me-a-home_*.csv 2>/dev/null | head -1
    ```
    If a match is found, copy the newest one (by mtime, not by filename timestamp) over `data/housing_data.csv`:
    ```bash
    cp "<latest match>" data/housing_data.csv
    ```
-   If the user already named a specific file, still check for a newer one and use that instead — point out the discrepancy. If no `Housing_*.csv` files exist in Downloads, skip this step and assume `data/housing_data.csv` was already updated manually.
+   If the user already named a specific file, still check for a newer one and use that instead — point out the discrepancy. If no `find-me-a-home_*.csv` files exist in Downloads, skip this step and assume `data/housing_data.csv` was already updated manually.
 1. Confirm `data/housing_data.csv` actually changed:
    ```bash
    git status --porcelain data/housing_data.csv
