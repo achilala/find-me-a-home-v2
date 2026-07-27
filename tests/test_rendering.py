@@ -203,6 +203,16 @@ def test_make_icon_out_zone_class_name():
     assert "fmah-out-zone" in icon.options["class_name"]
 
 
+def test_make_icon_sale_type_class_name():
+    icon = make_icon("12345", "#2ECC71", "#27AE60", sale_type="auction")
+    assert "fmah-saletype-auction" in icon.options["class_name"]
+
+
+def test_make_icon_no_sale_type_class_when_missing():
+    icon = make_icon("12345", "#2ECC71", "#27AE60")
+    assert "fmah-saletype-" not in icon.options["class_name"]
+
+
 # ---------------------------------------------------------------------------
 # build_map
 # ---------------------------------------------------------------------------
@@ -300,6 +310,14 @@ def test_build_map_embeds_prefs(minimal_config, minimal_df, minimal_geojson, min
     content = minimal_config.output_path.read_text()
     assert "FMAH_PREFS" in content
     assert "99999" in content
+
+
+def test_build_map_marker_has_sale_type_class(minimal_config, minimal_df, minimal_geojson, minimal_school_zone):
+    flood_data = {"flood_plains": minimal_geojson, "flood_prone": minimal_geojson}
+    school_zones = {69: minimal_school_zone, 1282: minimal_school_zone}
+    build_map(minimal_df, flood_data, school_zones, [], minimal_config, {})
+    content = minimal_config.output_path.read_text()
+    assert "fmah-saletype-auction" in content
 
 
 # ---------------------------------------------------------------------------

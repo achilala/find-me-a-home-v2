@@ -67,7 +67,7 @@ INTERACTION_JS = """
 (function(){
   var prefs = Object.assign({}, window.FMAH_PREFS || {});
   var hist = [];
-  var filters = { minBeds: 0, minBaths: 0, suburbs: [] };
+  var filters = { minBeds: 0, minBaths: 0, suburbs: [], saleTypes: [] };
 
   var LS_KEY = 'fmah-prefs';
 
@@ -140,17 +140,24 @@ INTERACTION_JS = """
       if (show && filters.suburbs.length > 0) {
         if (filters.suburbs.indexOf(_classVal(el, 'fmah-suburb-')) < 0) show = false;
       }
+      if (show && filters.saleTypes.length > 0) {
+        if (filters.saleTypes.indexOf(_classVal(el, 'fmah-saletype-')) < 0) show = false;
+      }
       el.style.display = show ? '' : 'none';
     });
   };
+
+  function saveFilters() {
+    prefs['_f'] = { mb: filters.minBeds, mba: filters.minBaths, s: filters.suburbs, st: filters.saleTypes };
+    persist();
+  }
 
   window.fmahOnFilterChange = function() {
     var beds = document.getElementById('fmah-min-beds');
     var baths = document.getElementById('fmah-min-baths');
     filters.minBeds = beds ? parseInt(beds.value, 10) : 0;
     filters.minBaths = baths ? parseInt(baths.value, 10) : 0;
-    prefs['_f'] = { mb: filters.minBeds, mba: filters.minBaths, s: filters.suburbs };
-    persist();
+    saveFilters();
     fmahRefreshVisibility();
   };
 
@@ -174,37 +181,36 @@ INTERACTION_JS = """
     if (c) c.textContent = n ? '(' + n + ' saved)' : '';
   }
 
-  function buildSuburbFilters() {
-    var suburbMap = {};
+  function buildCategoryFilters(classPrefix, containerId, filterKey) {
+    var map = {};
     document.querySelectorAll('.fmah-marker').forEach(function(el) {
-      var slug = _classVal(el, 'fmah-suburb-');
-      if (slug && !suburbMap[slug]) {
-        suburbMap[slug] = slug.replace(/-/g, ' ').replace(/\\b\\w/g, function(c) { return c.toUpperCase(); });
+      var slug = _classVal(el, classPrefix);
+      if (slug && !map[slug]) {
+        map[slug] = slug.replace(/-/g, ' ').replace(/\\b\\w/g, function(c) { return c.toUpperCase(); });
       }
     });
-    var container = document.getElementById('fmah-suburb-list');
-    if (!container || !Object.keys(suburbMap).length) return;
-    var slugs = Object.keys(suburbMap).sort(function(a, b) {
-      return suburbMap[a].localeCompare(suburbMap[b]);
+    var container = document.getElementById(containerId);
+    if (!container || !Object.keys(map).length) return;
+    var slugs = Object.keys(map).sort(function(a, b) {
+      return map[a].localeCompare(map[b]);
     });
     slugs.forEach(function(slug) {
       var label = document.createElement('label');
       label.style.cssText = 'display:flex;align-items:center;gap:5px;cursor:pointer';
       var cb = document.createElement('input');
       cb.type = 'checkbox'; cb.value = slug;
-      cb.checked = filters.suburbs.length === 0 || filters.suburbs.indexOf(slug) >= 0;
+      cb.checked = filters[filterKey].length === 0 || filters[filterKey].indexOf(slug) >= 0;
       cb.onchange = function() {
         var all = container.querySelectorAll('input');
         var checked = container.querySelectorAll('input:checked');
-        filters.suburbs = checked.length === all.length
+        filters[filterKey] = checked.length === all.length
           ? []
           : Array.prototype.map.call(checked, function(c) { return c.value; });
-        prefs['_f'] = { mb: filters.minBeds, mba: filters.minBaths, s: filters.suburbs };
-        persist();
+        saveFilters();
         fmahRefreshVisibility();
       };
       label.appendChild(cb);
-      label.appendChild(document.createTextNode('\\u00a0' + suburbMap[slug]));
+      label.appendChild(document.createTextNode('\\u00a0' + map[slug]));
       container.appendChild(label);
     });
   }
@@ -215,6 +221,7 @@ INTERACTION_JS = """
     filters.minBeds = f.mb || 0;
     filters.minBaths = f.mba || 0;
     filters.suburbs = f.s || [];
+    filters.saleTypes = f.st || [];
     var beds = document.getElementById('fmah-min-beds');
     var baths = document.getElementById('fmah-min-baths');
     if (beds) beds.value = String(filters.minBeds);
@@ -232,7 +239,8 @@ INTERACTION_JS = """
           setTimeout(tryApply, 150);
         } else {
           loadFilters();
-          buildSuburbFilters();
+          buildCategoryFilters('fmah-suburb-', 'fmah-suburb-list', 'suburbs');
+          buildCategoryFilters('fmah-saletype-', 'fmah-saletype-list', 'saleTypes');
           fmahRefreshVisibility();
         }
       }
@@ -290,6 +298,8 @@ CONTROLS_HTML = """
     </div>
     <div style="font-size:12px;color:#555;margin-bottom:4px">Suburbs</div>
     <div id="fmah-suburb-list" style="display:flex;flex-direction:column;gap:4px;font-size:12px"></div>
+    <div style="font-size:12px;color:#555;margin:8px 0 4px">Sale type</div>
+    <div id="fmah-saletype-list" style="display:flex;flex-direction:column;gap:4px;font-size:12px"></div>
   </div>
   <div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee">
     <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
@@ -425,14 +435,16 @@ def make_popup(row: pd.Series, listing_id: str, thumbnail_url: str = "") -> str:
     """
 
 
-def _suburb_slug(name: str) -> str:
+def _slugify(name: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
 
 
-def make_icon(listing_id: str, fill_color: str, stroke_color: str, class_name: str = "fmah-marker", beds: int = 0, baths: int = 0, suburb: str = "") -> folium.DivIcon:
+def make_icon(listing_id: str, fill_color: str, stroke_color: str, class_name: str = "fmah-marker", beds: int = 0, baths: int = 0, suburb: str = "", sale_type: str = "") -> folium.DivIcon:
     extra = f" fmah-beds-{beds} fmah-baths-{baths}"
     if suburb:
         extra += f" fmah-suburb-{suburb}"
+    if sale_type:
+        extra += f" fmah-saletype-{sale_type}"
     html = (
         f'<div id="mk{listing_id}" style="position:relative;width:20px;height:20px">'
         f'<div class="mkb" style="width:20px;height:20px;border-radius:50%;'
@@ -640,9 +652,10 @@ def build_map(
         marker_class = "fmah-marker" if inside else "fmah-marker fmah-out-zone"
         beds = int(row["BEDROOM_COUNT"]) if pd.notna(row.get("BEDROOM_COUNT")) else 0
         baths = int(row["BATHROOM_COUNT"]) if pd.notna(row.get("BATHROOM_COUNT")) else 0
+        sale_type = row.get("SALE_TYPE", "") or ""
         folium.Marker(
             location=[row["LATITUDE"], row["LONGITUDE"]],
-            icon=make_icon(listing_id, colors["fill"], colors["stroke"], class_name=marker_class, beds=beds, baths=baths, suburb=_suburb_slug(suburb)),
+            icon=make_icon(listing_id, colors["fill"], colors["stroke"], class_name=marker_class, beds=beds, baths=baths, suburb=_slugify(suburb), sale_type=_slugify(sale_type)),
             tooltip=f"{address}, {suburb} — {price}",
             popup=folium.Popup(make_popup(row, listing_id, (thumbnails or {}).get(listing_id, "")), max_width=280),
         ).add_to(m)
